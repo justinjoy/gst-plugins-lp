@@ -6,11 +6,16 @@ AC_INIT(Gstreamer Lightweight Playback plug-ins,1.0.0,
     https://github.com/justinjoy/gst-plugins-lp/issues, 
     gst-plugins-lp)
 
+AG_GST_INIT
+
+AM_INIT_AUTOMAKE([-Wno-portability 1.11 no-dist-gzip dist-xz tar-ustar]) 
+
 dnl required versions of gstreamer and plugins-base
 GST_REQUIRED=1.0.0
 GSTPB_REQUIRED=1.0.0
 
-AC_CONFIG_SRCDIR([gst/compat/gstfakedec.c])
+
+AC_CONFIG_SRCDIR([gst/compat/gstfakevdec.c])
 AC_CONFIG_HEADERS([config.h])
 
 dnl required version of automake
@@ -79,10 +84,52 @@ else
 fi
 AC_SUBST(plugindir)
 
-dnl set proper LDFLAGS for plugins
-GST_PLUGIN_LDFLAGS='-module -avoid-version -export-symbols-regex [_]*\(gst_\|Gst\|GST_\).*'
+dnl our libraries and install dirs use GST_API_VERSION in the filename                                                                                                                  
+dnl to allow side-by-side installation of different API versions                                                                                                                        
+GST_API_VERSION=1.0                                                                                                                                                                     
+AC_SUBST(GST_API_VERSION)                                                                                                                                                               
+AC_DEFINE_UNQUOTED(GST_API_VERSION, "$GST_API_VERSION",                                                                                                                                 
+  [GStreamer API Version]) 
+
+dnl every flag in GST_OPTION_CFLAGS, GST_OPTION_CXXFLAGS and GST_OPTION_OBJCFLAGS can be overridden                                                                                     
+dnl at make time with e.g. make ERROR_CFLAGS=""                                                                                                                                         
+GST_OPTION_CFLAGS="\$(WARNING_CFLAGS) \$(ERROR_CFLAGS) \$(DEBUG_CFLAGS) \$(PROFILE_CFLAGS) \$(GCOV_CFLAGS) \$(OPT_CFLAGS) \$(DEPRECATED_CFLAGS)"                                        
+GST_OPTION_CXXFLAGS="\$(WARNING_CXXFLAGS) \$(ERROR_CXXFLAGS) \$(DEBUG_CFLAGS) \$(PROFILE_CFLAGS) \$(GCOV_CFLAGS) \$(OPT_CFLAGS) \$(DEPRECATED_CFLAGS)"                                  
+GST_OPTION_OBJCFLAGS="\$(WARNING_OBJCFLAGS) \$(ERROR_OBJCFLAGS) \$(DEBUG_CFLAGS) \$(PROFILE_CFLAGS) \$(GCOV_CFLAGS) \$(OPT_CFLAGS) \$(DEPRECATED_CFLAGS)"                               
+AC_SUBST(GST_OPTION_CFLAGS)                                                                                                                                                             
+AC_SUBST(GST_OPTION_CXXFLAGS)                                                                                                                                                           
+AC_SUBST(GST_OPTION_OBJCFLAGS)                                                                                                                                                          
+                                                                                                                                                                                        
+dnl our libraries need to be versioned correctly                                                                                                                                        
+AC_SUBST(GST_LT_LDFLAGS)                                                                                                                                                                
+                                                                                                                                                                                        
+dnl FIXME: do we want to rename to GST_ALL_* ?                                                                                                                                          
+dnl prefer internal headers to already installed ones                                                                                                                                   
+dnl also add builddir include for enumtypes and marshal                                                                                                                                 
+dnl add ERROR_CFLAGS, but overridable                                                                                                                                                   
+GST_CFLAGS="$GST_CFLAGS -DGST_USE_UNSTABLE_API"                                                                                                                                         
+GST_CXXFLAGS="-I\$(top_srcdir)/gst-libs $GST_CFLAGS $GLIB_EXTRA_CFLAGS \$(GST_OPTION_CXXFLAGS)"                                                                                         
+GST_OBJCFLAGS="-I\$(top_srcdir)/gst-libs $GST_CFLAGS $GLIB_EXTRA_CFLAGS \$(GST_OPTION_OBJCFLAGS)"                                                                                       
+GST_CFLAGS="-I\$(top_srcdir)/gst-libs $GST_CFLAGS $GLIB_EXTRA_CFLAGS \$(GST_OPTION_CFLAGS)"                                                                                             
+AC_SUBST(GST_CFLAGS)                                                                                                                                                                    
+AC_SUBST(GST_CXXFLAGS)                                                                                                                                                                  
+AC_SUBST(GST_OBJCFLAGS)                                                                                                                                                                 
+AC_SUBST(GST_LIBS)                                                                                                                                                                      
+                                                                                                                                                                                        
+dnl LDFLAGS really should only contain flags, not libs - they get added before                                                                                                          
+dnl whatevertarget_LIBS and -L flags here affect the rest of the linking                                                                                                                
+GST_ALL_LDFLAGS="-no-undefined"                                                                                                                                                         
+AC_SUBST(GST_ALL_LDFLAGS)                                                                                                                                                               
+                                                                                                                                                                                        
+dnl this really should only contain flags, not libs - they get added before                                                                                                             
+dnl whatevertarget_LIBS and -L flags here affect the rest of the linking                                                                                                                
+GST_PLUGIN_LDFLAGS="-module -avoid-version -export-symbols-regex '^[_]*gst_plugin_desc.*' $GST_ALL_LDFLAGS"                                                                             
 AC_SUBST(GST_PLUGIN_LDFLAGS)
 
-AC_CONFIG_FILES([Makefile src/Makefile])
+AC_CONFIG_FILES(
+Makefile
+gst/Makefile
+gst/compat/Makefile
+)
 AC_OUTPUT
 
