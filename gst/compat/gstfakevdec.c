@@ -49,12 +49,13 @@ G_DEFINE_TYPE (GstFakeVdec, gst_fakevdec, GST_TYPE_VIDEO_DECODER);
 
 static GstStaticPadTemplate gst_fakevdec_sink_pad_template =
 GST_STATIC_PAD_TEMPLATE ("sink", GST_PAD_SINK,
-    GST_PAD_REQUEST,
-    GST_STATIC_CAPS_ANY);
+    GST_PAD_ALWAYS,
+    GST_STATIC_CAPS ("video/x-h264")
+    );
 
 static GstStaticPadTemplate gst_fakevdec_src_pad_template = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
-    GST_PAD_SOMETIMES,
+    GST_PAD_ALWAYS,
     GST_STATIC_CAPS_ANY);
 
 static void
@@ -85,17 +86,24 @@ gst_fakevdec_class_init (GstFakeVdecClass * klass)
 static void
 gst_fakevdec_init (GstFakeVdec * fakevdec)
 {
+  GST_DEBUG_OBJECT (fakevdec, "initializing");
 }
 
 static gboolean
 gst_fakevdec_start (GstVideoDecoder * decoder)
 {
+  GstFakeVdec *fakevdec = (GstFakeVdec *) decoder;
+
+  GST_DEBUG_OBJECT (fakevdec, "starting");
   return TRUE;
 }
 
 static gboolean
 gst_fakevdec_stop (GstVideoDecoder * decoder)
 {
+  GstFakeVdec *fakevdec = (GstFakeVdec *) decoder;
+
+  GST_DEBUG_OBJECT (fakevdec, "stopping");
   return TRUE;
 }
 
@@ -110,7 +118,11 @@ gst_fakevdec_set_format (GstVideoDecoder * decoder, GstVideoCodecState * state)
 {
   GstFakeVdec *fakevdec = (GstFakeVdec *) decoder;
 
-  /* We'll set format later on */
+  GST_DEBUG_OBJECT (fakevdec, "setcaps called");
+
+  GST_DEBUG_OBJECT (state->caps, "getting state caps");
+  gst_pad_set_caps(decoder->srcpad, state->caps);
+
 
   return TRUE;
 }
@@ -120,6 +132,15 @@ gst_fakevdec_handle_frame (GstVideoDecoder * decoder, GstVideoCodecFrame * frame
 {
   GstFakeVdec *fakevdec = (GstFakeVdec *) decoder;
   GstFlowReturn ret = GST_FLOW_OK;
+
+  GST_LOG_OBJECT (fakevdec,
+      "Received new data of size %u, dts %" GST_TIME_FORMAT ", pts:%"
+      GST_TIME_FORMAT ", dur:%" GST_TIME_FORMAT,
+      gst_buffer_get_size (frame->input_buffer),
+      GST_TIME_ARGS (frame->dts),
+      GST_TIME_ARGS (frame->pts), GST_TIME_ARGS (frame->duration));
+
+
   return ret;
 }
 
