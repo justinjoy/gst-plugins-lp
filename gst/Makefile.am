@@ -1,5 +1,5 @@
 SUBDIRS = \
-    compat
+    compat playback
 
 DIS_SUBDIRS = \
-    compat
+    compat playback
