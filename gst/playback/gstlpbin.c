@@ -81,49 +81,48 @@ gst_lp_bin_get_type (void)
 }
 
 static void
-gst_lp_bin_class_init(GstLpBinClass *klass)
+gst_lp_bin_class_init (GstLpBinClass * klass)
 {
   GObjectClass *gobject_klass;
   GstElementClass *gstelement_klass;
   GstBinClass *gstbin_klass;
 
   gobject_klass = (GObjectClass *) klass;
-  gstelement_klass = (GstElementClass*) klass;
+  gstelement_klass = (GstElementClass *) klass;
   gstbin_klass = (GstBinClass *) klass;
 
-  parent_class = g_type_class_peek_parent(klass);
+  parent_class = g_type_class_peek_parent (klass);
 
   gobject_klass->set_property = gst_lp_bin_set_property;
   gobject_klass->get_property = gst_lp_bin_get_property;
 
   gobject_klass->finalize = gst_lp_bin_finalize;
 
-  gst_element_class_set_static_metadata (gstelement_klass, 
-    "Lightweight Play Bin", "Lightweght/Bin/Player", 
-    "Autoplug and play media for Restricted systems", 
-    "Justin Joy <justin.joy.9to5@gmail.com>");
+  gst_element_class_set_static_metadata (gstelement_klass,
+      "Lightweight Play Bin", "Lightweight/Bin/Player",
+      "Autoplug and play media for Restricted systems",
+      "Justin Joy <justin.joy.9to5@gmail.com>");
 
-  gstelement_klass->change_state = 
-    GST_DEBUG_FUNCPTR (gst_lp_bin_change_state);
+  gstelement_klass->change_state = GST_DEBUG_FUNCPTR (gst_lp_bin_change_state);
   gstelement_klass->query = GST_DEBUG_FUNCPTR (gst_lp_bin_query);
 
-  gstbin_klass->handle_message = 
-    GST_DEBUG_FUNCPTR (gst_lp_bin_handle_message);
+  gstbin_klass->handle_message = GST_DEBUG_FUNCPTR (gst_lp_bin_handle_message);
 }
 
 static void
-gst_lp_bin_init (GstLpBin *lpbin)
+gst_lp_bin_init (GstLpBin * lpbin)
 {
-  GST_DEBUG_CATEGORY_INIT (gst_lp_bin_debug, "lpbin", 0, "Lightweight Play Bin");
+  GST_DEBUG_CATEGORY_INIT (gst_lp_bin_debug, "lpbin", 0,
+      "Lightweight Play Bin");
   g_rec_mutex_init (&lpbin->lock);
 }
 
-static void 
-gst_lp_bin_finalize (GObject *obj)
+static void
+gst_lp_bin_finalize (GObject * obj)
 {
   GstLpBin *lpbin;
 
-  lpbin = GST_LP_BIN(obj);
+  lpbin = GST_LP_BIN (obj);
 
   g_rec_mutex_clear (&lpbin->lock);
 
@@ -131,9 +130,9 @@ gst_lp_bin_finalize (GObject *obj)
 }
 
 static gboolean
-gst_lp_bin_query (GstElement *element, GstQuery *query)
+gst_lp_bin_query (GstElement * element, GstQuery * query)
 {
-  GstLpBin *lpbin = GST_LP_BIN(element);
+  GstLpBin *lpbin = GST_LP_BIN (element);
 
   gboolean ret;
 
@@ -147,35 +146,33 @@ gst_lp_bin_query (GstElement *element, GstQuery *query)
 }
 
 static void
-gst_lp_bin_handle_message (GstBin *bin, GstMessage *msg)
+gst_lp_bin_handle_message (GstBin * bin, GstMessage * msg)
 {
 //  GstLpBin *lpbin = GST_LP_BIN(bin);
 
   if (msg)
-    GST_BIN_CLASS(parent_class)->handle_message(bin, msg);
+    GST_BIN_CLASS (parent_class)->handle_message (bin, msg);
 }
 
-static void 
-gst_lp_bin_set_property (GObject *object, guint prop_id, 
-  const GValue *value, GParamSpec *pspec)
+static void
+gst_lp_bin_set_property (GObject * object, guint prop_id,
+    const GValue * value, GParamSpec * pspec)
 {
 //  GstLpBin *lpbin = GST_LP_BIN(object);
 
-  switch (prop_id)
-  {
+  switch (prop_id) {
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
   }
 }
 
 static void
-gst_lp_bin_get_property (GObject * object, guint prop_id, GValue * value, 
-GParamSpec *pspec)
+gst_lp_bin_get_property (GObject * object, guint prop_id, GValue * value,
+    GParamSpec * pspec)
 {
 //  GstLpBin *lpbin = GST_LP_BIN(object);
 
-  switch (prop_id)
-  {
+  switch (prop_id) {
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
