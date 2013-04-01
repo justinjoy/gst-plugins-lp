@@ -130,6 +130,7 @@ AC_CONFIG_FILES(
 Makefile
 gst/Makefile
 gst/compat/Makefile
+gst/playback/Makefile
 )
 AC_OUTPUT
 
