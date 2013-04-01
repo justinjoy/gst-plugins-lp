@@ -56,7 +56,8 @@ GST_STATIC_PAD_TEMPLATE ("sink", GST_PAD_SINK,
 static GstStaticPadTemplate gst_fakevdec_src_pad_template = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS_ANY);
+    GST_STATIC_CAPS ("video/x-fd")
+    );
 
 static void
 gst_fakevdec_class_init (GstFakeVdecClass * klass)
@@ -117,12 +118,14 @@ static gboolean
 gst_fakevdec_set_format (GstVideoDecoder * decoder, GstVideoCodecState * state)
 {
   GstFakeVdec *fakevdec = (GstFakeVdec *) decoder;
-
+  GstCaps *target_caps;
   GST_DEBUG_OBJECT (fakevdec, "setcaps called");
 
   GST_DEBUG_OBJECT (state->caps, "getting state caps");
-  gst_pad_set_caps(decoder->srcpad, state->caps);
-
+  target_caps = gst_caps_copy (state->caps); 
+  gst_caps_set_simple (target_caps, "passed_fakedecoder", G_TYPE_BOOLEAN, TRUE, NULL); 
+  //gst_caps_replace (decoder->srcpad, target_caps);
+  gst_pad_set_caps(decoder->srcpad, target_caps); //state->caps);
 
   return TRUE;
 }
