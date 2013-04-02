@@ -5,6 +5,7 @@
 #include <string.h>
 #include <gst/gst.h>
 
+#include "gstfcbin.h"
 #include "gstfakevdec.h"
 
 static gboolean
@@ -12,6 +13,10 @@ plugin_init (GstPlugin * plugin)
 {
   if (!gst_element_register (plugin, "fakevdec", GST_RANK_PRIMARY,
           GST_TYPE_FAKEVDEC))
+    return FALSE;
+
+  if (!gst_element_register (plugin, "fcbin", GST_RANK_PRIMARY,
+          GST_TYPE_FC_BIN))
     return FALSE;
 
   return TRUE;
