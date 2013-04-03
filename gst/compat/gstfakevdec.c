@@ -1,6 +1,7 @@
 /* GStreamer Lightweight Plugins
  * Copyright (C) 2013 LG Electronics.
- *	Author : Justin Joy <justin.joy.9to5@gmail.com> 
+ *	Author : Wonchul86 Lee <wonchul86.lee@lge.com> 
+ *	         Justin Joy <justin.joy.9to5@gmail.com> 
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -72,14 +73,14 @@ gst_fakevdec_class_init (GstFakeVdecClass * klass)
   gst_element_class_set_static_metadata (element_class, "Fake Video decoder",
       "Codec/Decoder/Video",
       "Pass data to backend decoder",
-      "Justin Joy <justin.joy.9to5@gmail.com>");
+      "Wonchul86 Lee <wonchul86.lee@lge.com>,Justin Joy <justin.joy.9to5@gmail.com>");
 
   vdec_class->start = gst_fakevdec_start;
   vdec_class->stop = gst_fakevdec_stop;
   vdec_class->reset = gst_fakevdec_reset;
   vdec_class->set_format = gst_fakevdec_set_format;
   vdec_class->handle_frame = gst_fakevdec_handle_frame;
-  vdec_class->decide_allocation = gst_fakevdec_decide_allocation;
+//  vdec_class->decide_allocation = gst_fakevdec_decide_allocation;
 
   GST_DEBUG_CATEGORY_INIT (fakevdec_debug, "fakevdec", 0, "Fake video decoder");
 }
@@ -120,13 +121,13 @@ gst_fakevdec_set_format (GstVideoDecoder * decoder, GstVideoCodecState * state)
   GstFakeVdec *fakevdec = (GstFakeVdec *) decoder;
   GstCaps *target_caps;
   GST_DEBUG_OBJECT (fakevdec, "setcaps called");
-
+/*
   GST_DEBUG_OBJECT (state->caps, "getting state caps");
   target_caps = gst_caps_copy (state->caps); 
   gst_caps_set_simple (target_caps, "passed_fakedecoder", G_TYPE_BOOLEAN, TRUE, NULL); 
   //gst_caps_replace (decoder->srcpad, target_caps);
   gst_pad_set_caps(decoder->srcpad, target_caps); //state->caps);
-
+*/
   return TRUE;
 }
 
@@ -143,7 +144,8 @@ gst_fakevdec_handle_frame (GstVideoDecoder * decoder, GstVideoCodecFrame * frame
       GST_TIME_ARGS (frame->dts),
       GST_TIME_ARGS (frame->pts), GST_TIME_ARGS (frame->duration));
 
-
+  frame->output_buffer = gst_buffer_copy(frame->input_buffer);
+  ret = gst_video_decoder_finish_frame (GST_VIDEO_DECODER (decoder), frame);   
   return ret;
 }
 
@@ -152,6 +154,8 @@ gst_fakevdec_decide_allocation (GstVideoDecoder * bdec, GstQuery * query)
 {
   GstBufferPool *pool = NULL;
   GstStructure *config;
+  
+  GST_DEBUG_OBJECT (bdec, "allocation");
 
   if (!GST_VIDEO_DECODER_CLASS (parent_class)->decide_allocation (bdec, query))
     return FALSE;
