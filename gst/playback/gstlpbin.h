@@ -42,7 +42,13 @@ struct _GstLpBin
 
   GRecMutex lock;               /* to protect group switching */
 
+	GstElement *uridecodebin;
+	GstElement *lpsink;
   GstFlowReturn ret;
+
+	gchar* uri;
+	gulong pad_added_id;
+	gulong no_more_pads_id;
 };
 
 struct _GstLpBinClass
