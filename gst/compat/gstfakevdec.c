@@ -121,13 +121,14 @@ gst_fakevdec_set_format (GstVideoDecoder * decoder, GstVideoCodecState * state)
 {
   GstFakeVdec *fakevdec = (GstFakeVdec *) decoder;
   GstCaps *target_caps;
-  GST_DEBUG_OBJECT (fakevdec, "setcaps called");
-/*
+
   GST_DEBUG_OBJECT (state->caps, "getting state caps");
   target_caps = gst_caps_copy (state->caps); 
+
+  gst_caps_make_writable (target_caps);
+//  gst_caps_replace (decoder->srcpad, target_caps);
   gst_caps_set_simple (target_caps, "passed_fakedecoder", G_TYPE_BOOLEAN, TRUE, NULL); 
-  //gst_caps_replace (decoder->srcpad, target_caps);*/
-  gst_pad_set_caps(decoder->srcpad, state->caps);
+  gst_pad_set_caps(decoder->srcpad, target_caps);
 
   return TRUE;
 }
