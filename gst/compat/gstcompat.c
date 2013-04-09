@@ -7,12 +7,17 @@
 
 #include "gstfcbin.h"
 #include "gstfakevdec.h"
+#include "gstfakeadec.h"
 
 static gboolean
 plugin_init (GstPlugin * plugin)
 {
   if (!gst_element_register (plugin, "fakevdec", GST_RANK_PRIMARY,
           GST_TYPE_FAKEVDEC))
+    return FALSE;
+
+  if (!gst_element_register (plugin, "fakeadec", GST_RANK_PRIMARY,
+          GST_TYPE_FAKEADEC))
     return FALSE;
 
   if (!gst_element_register (plugin, "fcbin", GST_RANK_PRIMARY,
