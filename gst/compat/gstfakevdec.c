@@ -52,7 +52,7 @@ G_DEFINE_TYPE (GstFakeVdec, gst_fakevdec, GST_TYPE_VIDEO_DECODER);
 static GstStaticPadTemplate gst_fakevdec_sink_pad_template =
 GST_STATIC_PAD_TEMPLATE ("sink", GST_PAD_SINK,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (FD_CAPS)
+    GST_STATIC_CAPS (FD_VIDEO_CAPS)
     );
 
 static GstStaticPadTemplate gst_fakevdec_src_pad_template = GST_STATIC_PAD_TEMPLATE ("src",

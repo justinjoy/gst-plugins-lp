@@ -23,7 +23,7 @@
 
 G_BEGIN_DECLS
 
-#define FD_CAPS \
+#define FD_VIDEO_CAPS \
         "video/x-divx;" \
         "video/x-h264;" \
         "video/x-intel-h263;" \
@@ -39,6 +39,30 @@ G_BEGIN_DECLS
         "video/x-vp8;" \
         "video/x-xvid;" \
         "video/x-flash-video"
+
+
+#define FD_AUDIO_CAPS \
+      	"audio/mpeg;"	\
+	      "audio/x-dts;" \
+	      "audio/x-ac3;" \
+      	"audio/x-eac3;" \
+      	"audio/x-private1-ac3;" \
+	      "audio/x-wma;" \
+      	"audio/x-pn-realaudio;" \
+	      "audio/x-raw;" \
+	      "audio/x-lpcm-1;" \
+	      "audio/x-lpcm;" \
+      	"audio/x-private-lg-lpcm;" \
+      	"audio/x-private1-lpcm;" \
+      	"audio/x-private-ts-lpcm;" \
+	      "audio/x-adpcm;" \
+      	"audio/x-vorbis;" \
+      	"audio/AMR;" \
+      	"audio/AMR-WB;" \
+      	"audio/x-flac;" \
+      	"audio/x-mulaw;" \
+      	"audio/x-alaw"
+
 
 G_END_DECLS
 

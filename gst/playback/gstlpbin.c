@@ -242,7 +242,7 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
 {
   GstCaps *fd_caps;
 
-  fd_caps = gst_caps_new_empty_simple ("video/x-fd");
+  fd_caps = gst_caps_from_string ("video/x-fd; audio/x-fd");
 
   lpbin->uridecodebin = gst_element_factory_make ("uridecodebin", NULL);
   g_object_set (lpbin->uridecodebin, "caps", fd_caps, "uri", lpbin->uri, NULL);
