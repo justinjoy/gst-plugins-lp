@@ -74,8 +74,8 @@ gst_fakeadec_class_init (GstFakeAdecClass * klass)
       "Pass data to backend decoder",
       "Wonchul86 Lee <wonchul86.lee@lge.com>,Justin Joy <justin.joy.9to5@gmail.com>");
 
-  adec_class->start = gst_fakeadec_start;
-  adec_class->stop = gst_fakeadec_stop;
+//  adec_class->start = gst_fakeadec_start;
+//  adec_class->stop = gst_fakeadec_stop;
   //adec_class->reset = gst_fakeadec_reset;
   adec_class->set_format = gst_fakeadec_set_format;
   adec_class->handle_frame = gst_fakeadec_handle_frame;
@@ -117,27 +117,36 @@ static gboolean
 gst_fakeadec_set_format (GstAudioDecoder * decoder, GstCaps * in_caps)
 {
   GstFakeAdec *fakeadec = (GstFakeAdec *) decoder;
+  GstCaps *target_caps;
   GstAudioInfo info;
 
-  GST_DEBUG_OBJECT (fakeadec, "setcaps called");
+  GST_DEBUG_OBJECT (in_caps, "getting state caps");
+  target_caps = gst_caps_copy (in_caps); 
 
-  gst_audio_info_init (&info);
-  gst_audio_info_set_format (&info, GST_AUDIO_FORMAT_S16LE, 1, 1, NULL);
-  info.bpf = 1;
-  gst_audio_decoder_set_output_format (decoder, &info);
+  gst_caps_make_writable (target_caps);
+  gst_caps_set_simple (target_caps, "passed_fakedecoder", G_TYPE_BOOLEAN, TRUE, NULL); 
+//  gst_caps_replace (decoder->srcpad, target_caps);
+  gst_pad_set_caps(decoder->srcpad, target_caps);
 
-  gst_pad_set_caps (decoder->srcpad, in_caps);
+  gst_audio_info_init (&info);                                        
+  gst_audio_info_set_format (&info, GST_AUDIO_FORMAT_S16, 44100, 2, NULL);
+                                                                      
+  gst_audio_decoder_set_output_format (decoder, &info);                  
   return TRUE;
 }
 
 static GstFlowReturn
 gst_fakeadec_handle_frame (GstAudioDecoder * decoder, GstBuffer * buffer)
 {
-  //GstFakeAdec *fakeadec = (GstFakeAdec *) decoder;
+  GstFakeAdec *fakeadec = (GstFakeAdec *) decoder;
   GstFlowReturn ret = GST_FLOW_OK;
-  GstAudioInfo *info;
+  GstBuffer *copied_buffer;
 
-  info = gst_audio_decoder_get_audio_info (decoder);
-  ret = gst_audio_decoder_finish_frame (decoder, buffer, 1);
+  GST_LOG_OBJECT (fakeadec,
+      "Received new data of size %u", 
+      gst_buffer_get_size (buffer));
+
+//  copied_buffer = gst_buffer_copy(buffer);
+//  ret = gst_audio_decoder_finish_frame (decoder, copied_buffer, 1);
   return ret;
 }
