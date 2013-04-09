@@ -119,10 +119,10 @@ static void
 gst_lp_sink_init (GstLpSink * lpsink)
 {
   g_rec_mutex_init (&lpsink->lock);
-	lpsink->audio_sink = NULL;
-	lpsink->video_sink = NULL;
-	lpsink->video_pad = NULL;
-	lpsink->audio_pad = NULL;
+  lpsink->audio_sink = NULL;
+  lpsink->video_sink = NULL;
+  lpsink->video_pad = NULL;
+  lpsink->audio_pad = NULL;
 }
 
 static void
@@ -143,17 +143,17 @@ gst_lp_sink_finalize (GObject * obj)
 
   g_rec_mutex_clear (&lpsink->lock);
 
-  if(lpsink->audio_sink){
-		g_object_unref(lpsink->audio_sink);
-		lpsink->audio_sink = NULL;
-	}
-  if(lpsink->video_sink){
-		g_object_unref(lpsink->video_sink);
-		lpsink->video_sink = NULL;
-	}
+  if (lpsink->audio_sink) {
+    g_object_unref (lpsink->audio_sink);
+    lpsink->audio_sink = NULL;
+  }
+  if (lpsink->video_sink) {
+    g_object_unref (lpsink->video_sink);
+    lpsink->video_sink = NULL;
+  }
 
-	lpsink->video_pad = NULL;
-	lpsink->audio_pad = NULL;
+  lpsink->video_pad = NULL;
+  lpsink->audio_pad = NULL;
 
   G_OBJECT_CLASS (parent_class)->finalize (obj);
 }
@@ -172,53 +172,52 @@ GstPad *
 gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
 {
   GstPad *res = NULL;
-	GstPad *sinkpad;
+  GstPad *sinkpad;
   GST_LP_SINK_LOCK (lpsink);
-	const gchar *sink_name;
-	const gchar *pad_name;
-	GstElement *sink_element;
+  const gchar *sink_name;
+  const gchar *pad_name;
+  GstElement *sink_element;
 
   GST_LP_SINK_LOCK (lpsink);
 
   switch (type) {
-	 	case GST_LP_SINK_TYPE_AUDIO:
-			sink_name = "fakesink";
-			pad_name = "audio_sink";
+    case GST_LP_SINK_TYPE_AUDIO:
+      sink_name = "fakesink";
+      pad_name = "audio_sink";
 
-			break;
-		case GST_LP_SINK_TYPE_VIDEO:
-			sink_name = "vdecsink";
-			pad_name = "video_sink";
-			break;
+      break;
+    case GST_LP_SINK_TYPE_VIDEO:
+      sink_name = "vdecsink";
+      pad_name = "video_sink";
+      break;
     default:
       res = NULL;
   }
 
   sink_element = gst_element_factory_make (sink_name, NULL);
 
-	if (!sink_element) {
-		/*post_missing_element_message (lpsink, "adecsink");
-		GST_ELEMENT_ERROR (lpsink, CORE, MISSING_PLUGIN,
-			(_("Missing element '%s' - check your Gstreamer Installation."), "adecsink"), NULL);
-		res = NULL;*/
-		goto beach;
-	}
- 
- 	gst_bin_add (lpsink, sink_element);
-	sinkpad = gst_element_get_static_pad (sink_element, "sink");
-	res = gst_ghost_pad_new (pad_name, sinkpad);
+  if (!sink_element) {
+    /*post_missing_element_message (lpsink, "adecsink");
+       GST_ELEMENT_ERROR (lpsink, CORE, MISSING_PLUGIN,
+       (_("Missing element '%s' - check your Gstreamer Installation."), "adecsink"), NULL);
+       res = NULL; */
+    goto beach;
+  }
 
-	gst_pad_set_active (res, TRUE);
-	gst_element_add_pad (GST_ELEMENT_CAST(lpsink), res);
+  gst_bin_add (lpsink, sink_element);
+  sinkpad = gst_element_get_static_pad (sink_element, "sink");
+  res = gst_ghost_pad_new (pad_name, sinkpad);
 
-	if (type == GST_LP_SINK_TYPE_AUDIO){
-		lpsink->audio_sink = sink_element;
-		lpsink->audio_pad = res;
-	}
-	else if (type == GST_LP_SINK_TYPE_VIDEO){
-		lpsink->video_sink = sink_element;
-		lpsink->video_pad = res;
-	}
+  gst_pad_set_active (res, TRUE);
+  gst_element_add_pad (GST_ELEMENT_CAST (lpsink), res);
+
+  if (type == GST_LP_SINK_TYPE_AUDIO) {
+    lpsink->audio_sink = sink_element;
+    lpsink->audio_pad = res;
+  } else if (type == GST_LP_SINK_TYPE_VIDEO) {
+    lpsink->video_sink = sink_element;
+    lpsink->video_pad = res;
+  }
 
 beach:
 
@@ -272,7 +271,7 @@ gst_lp_sink_release_pad (GstLpSink * lpsink, GstPad * pad)
   if (*res) {
     GST_DEBUG_OBJECT (lpsink, "deactivate pad %" GST_PTR_FORMAT, *res);
     // TODO
-		gst_ghost_pad_set_target (GST_GHOST_PAD_CAST (*res), NULL);
+    gst_ghost_pad_set_target (GST_GHOST_PAD_CAST (*res), NULL);
     GST_DEBUG_OBJECT (lpsink, "remove pad %" GST_PTR_FORMAT, *res);
     gst_element_remove_pad (GST_ELEMENT_CAST (lpsink), *res);
     *res = NULL;

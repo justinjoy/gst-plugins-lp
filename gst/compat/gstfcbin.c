@@ -47,6 +47,41 @@ GST_STATIC_PAD_TEMPLATE ("src%u",
     GST_PAD_SOMETIMES,
     GST_STATIC_CAPS_ANY);
 
+static GstStaticPadTemplate gst_fc_bin_vsink_pad_template =
+GST_STATIC_PAD_TEMPLATE ("video_sink%u", GST_PAD_SINK,
+    GST_PAD_REQUEST,
+    GST_STATIC_CAPS_ANY);
+
+static GstStaticPadTemplate gst_fc_bin_vsrc_pad_template =
+GST_STATIC_PAD_TEMPLATE ("video_src%u",
+    GST_PAD_SRC,
+    GST_PAD_SOMETIMES,
+    GST_STATIC_CAPS_ANY);
+
+static GstStaticPadTemplate gst_fc_bin_asink_pad_template =
+GST_STATIC_PAD_TEMPLATE ("audio_sink%u", GST_PAD_SINK,
+    GST_PAD_REQUEST,
+    GST_STATIC_CAPS_ANY);
+
+static GstStaticPadTemplate gst_fc_bin_asrc_pad_template =
+GST_STATIC_PAD_TEMPLATE ("audio_src%u",
+    GST_PAD_SRC,
+    GST_PAD_SOMETIMES,
+    GST_STATIC_CAPS_ANY);
+
+static GstStaticPadTemplate gst_fc_bin_tsink_pad_template =
+GST_STATIC_PAD_TEMPLATE ("text_sink%u", GST_PAD_SINK,
+    GST_PAD_REQUEST,
+    GST_STATIC_CAPS_ANY);
+
+static GstStaticPadTemplate gst_fc_bin_tsrc_pad_template =
+GST_STATIC_PAD_TEMPLATE ("text_src%u",
+    GST_PAD_SRC,
+    GST_PAD_SOMETIMES,
+    GST_STATIC_CAPS_ANY);
+
+
+
 static void
 gst_fc_bin_class_init (GstFCBinClass * klass)
 {
@@ -63,6 +98,19 @@ gst_fc_bin_class_init (GstFCBinClass * klass)
       gst_static_pad_template_get (&gst_fc_bin_src_pad_template));
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&gst_fc_bin_sink_pad_template));
+  gst_element_class_add_pad_template (element_class,
+      gst_static_pad_template_get (&gst_fc_bin_asrc_pad_template));
+  gst_element_class_add_pad_template (element_class,
+      gst_static_pad_template_get (&gst_fc_bin_asink_pad_template));
+  gst_element_class_add_pad_template (element_class,
+      gst_static_pad_template_get (&gst_fc_bin_vsrc_pad_template));
+  gst_element_class_add_pad_template (element_class,
+      gst_static_pad_template_get (&gst_fc_bin_vsink_pad_template));
+  gst_element_class_add_pad_template (element_class,
+      gst_static_pad_template_get (&gst_fc_bin_tsrc_pad_template));
+  gst_element_class_add_pad_template (element_class,
+      gst_static_pad_template_get (&gst_fc_bin_tsink_pad_template));
+
   gst_element_class_set_static_metadata (element_class, "Flow Controller",
       "Lightweight/Controller/Flow",
       "data flow controller behind Fake Decoder",

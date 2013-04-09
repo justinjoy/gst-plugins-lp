@@ -43,10 +43,10 @@ struct _GstLpSink
 
   GRecMutex lock;               /* to protect group switching */
 
-	GstElement *video_sink;
-	GstElement *audio_sink;
+  GstElement *video_sink;
+  GstElement *audio_sink;
   GstPad *audio_pad;
-	GstPad *video_pad;
+  GstPad *video_pad;
 
   GstFlowReturn ret;
 };
