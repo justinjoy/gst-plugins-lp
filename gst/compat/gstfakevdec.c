@@ -1,6 +1,6 @@
 /* GStreamer Lightweight Plugins
  * Copyright (C) 2013 LG Electronics.
- *	Author : Wonchul86 Lee <wonchul86.lee@lge.com> 
+ *	Author : Wonchul Lee <wonchul86.lee@lge.com> 
  *	         Justin Joy <justin.joy.9to5@gmail.com> 
  *
  * This library is free software; you can redistribute it and/or
@@ -74,7 +74,7 @@ gst_fakevdec_class_init (GstFakeVdecClass * klass)
   gst_element_class_set_static_metadata (element_class, "Fake Video decoder",
       "Codec/Decoder/Video",
       "Pass data to backend decoder",
-      "Wonchul86 Lee <wonchul86.lee@lge.com>,Justin Joy <justin.joy.9to5@gmail.com>");
+      "Wonchul Lee <wonchul86.lee@lge.com>,Justin Joy <justin.joy.9to5@gmail.com>");
 
   vdec_class->start = gst_fakevdec_start;
   vdec_class->stop = gst_fakevdec_stop;
