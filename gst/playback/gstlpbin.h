@@ -49,6 +49,10 @@ struct _GstLpBin
   gchar *uri;
   gulong pad_added_id;
   gulong no_more_pads_id;
+
+  guint naudio;
+  guint nvideo;
+  guint ntext;
 };
 
 struct _GstLpBinClass

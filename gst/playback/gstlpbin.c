@@ -40,6 +40,7 @@ enum
   LAST_SIGNAL
 };
 
+/* GstObject overriding */
 static void gst_lp_bin_class_init (GstLpBinClass * klass);
 static void gst_lp_bin_init (GstLpBin * lpbin);
 static void gst_lp_bin_finalize (GObject * object);
@@ -48,18 +49,21 @@ static void gst_lp_bin_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * spec);
 static void gst_lp_bin_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * spec);
+static GstStateChangeReturn gst_lp_bin_change_state (GstElement * element,
+    GstStateChange transition);
+static void gst_lp_bin_handle_message (GstBin * bin, GstMessage * message);
+static gboolean gst_lp_bin_query (GstElement * element, GstQuery * query);
 
+/* signal callbacks */
 static void no_more_pads_cb (GstElement * decodebin, GstPad * pad,
     GstLpBin * lpbin);
 static void pad_added_cb (GstElement * decodebin, GstPad * pad,
     GstLpBin * lpbin);
+
+/* private functions */
 static gboolean gst_lp_bin_setup_element (GstLpBin * lpbin);
-static GstStateChangeReturn gst_lp_bin_change_state (GstElement * element,
-    GstStateChange transition);
+static gboolean gst_lp_bin_make_link(GstLpBin *lpbin);
 
-
-static void gst_lp_bin_handle_message (GstBin * bin, GstMessage * message);
-static gboolean gst_lp_bin_query (GstElement * element, GstQuery * query);
 
 static GstElementClass *parent_class;
 
@@ -132,6 +136,10 @@ gst_lp_bin_init (GstLpBin * lpbin)
   g_rec_mutex_init (&lpbin->lock);
   lpbin->uridecodebin = NULL;
   lpbin->lpsink = NULL;
+
+  lpbin->naudio = 0;
+  lpbin->nvideo = 0;
+  lpbin->ntext = 0;
 }
 
 static void
@@ -221,20 +229,21 @@ pad_added_cb (GstElement * decodebin, GstPad * pad, GstLpBin * lpbin)
   GST_DEBUG_OBJECT (lpbin,
       "pad %s:%s with caps %" GST_PTR_FORMAT " added",
       GST_DEBUG_PAD_NAME (pad), caps);
-
   if (g_str_has_prefix (name, "video/")) {
-    sink_name = "video_sink";
+    nvideo++;
+//    sink_name = "video_sink";
   } else if (g_str_has_prefix (name, "audio/")) {
-    sink_name = "audio_sink";
+    naudio++;
+//    sink_name = "audio_sink";
   }
-  lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, sink_name);
-  ret = gst_pad_link (pad, lpsink_sinkpad);
-  g_printf ("%d\n", ret);
+//  lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, sink_name);
+//  ret = gst_pad_link (pad, lpsink_sinkpad);
 }
 
 static void
 no_more_pads_cb (GstElement * decodebin, GstPad * pad, GstLpBin * lpbin)
 {
+  GST_DEBUG_OBJECT (lpbin, "");
 }
 
 static gboolean
@@ -262,6 +271,14 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
   return TRUE;
 }
 
+static gboolean gst_lp_bin_make_link(GstLpBin *lpbin)
+{
+//  lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, sink_name);
+//  ret = gst_pad_link (pad, lpsink_sinkpad);
+
+  return TRUE;
+}
+
 static GstStateChangeReturn
 gst_lp_bin_change_state (GstElement * element, GstStateChange transition)
 {
@@ -273,6 +290,9 @@ gst_lp_bin_change_state (GstElement * element, GstStateChange transition)
   switch (transition) {
     case GST_STATE_CHANGE_NULL_TO_READY:
       gst_lp_bin_setup_element (lpbin);
+      break;
+    case GST_STATE_CHANGE_READY_TO_PAUSED:
+      gst_lp_bin_make_link(lpbin);
       break;
     default:
       break;
