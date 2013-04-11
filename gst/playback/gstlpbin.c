@@ -62,7 +62,7 @@ static void pad_added_cb (GstElement * decodebin, GstPad * pad,
 
 /* private functions */
 static gboolean gst_lp_bin_setup_element (GstLpBin * lpbin);
-static gboolean gst_lp_bin_make_link(GstLpBin *lpbin);
+static gboolean gst_lp_bin_make_link (GstLpBin * lpbin);
 
 
 static GstElementClass *parent_class;
@@ -221,6 +221,8 @@ pad_added_cb (GstElement * decodebin, GstPad * pad, GstLpBin * lpbin)
   const gchar *sink_name;
   GstPad *lpsink_sinkpad;
   gint ret;
+  GstPad *sinkpad;
+  GstElement *sink_element;
 
   caps = gst_pad_query_caps (pad, NULL);
   s = gst_caps_get_structure (caps, 0);
@@ -236,8 +238,10 @@ pad_added_cb (GstElement * decodebin, GstPad * pad, GstLpBin * lpbin)
 //    naudio++;
     sink_name = "audio_sink";
   }
+
   lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, sink_name);
   ret = gst_pad_link (pad, lpsink_sinkpad);
+
 }
 
 static void
@@ -271,7 +275,8 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
   return TRUE;
 }
 
-static gboolean gst_lp_bin_make_link(GstLpBin *lpbin)
+static gboolean
+gst_lp_bin_make_link (GstLpBin * lpbin)
 {
 //  lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, sink_name);
 //  ret = gst_pad_link (pad, lpsink_sinkpad);

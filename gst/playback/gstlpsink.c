@@ -173,12 +173,11 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
 {
   GstPad *res = NULL;
   GstPad *sinkpad;
-  GST_LP_SINK_LOCK (lpsink);
   const gchar *sink_name;
   const gchar *pad_name;
   GstElement *sink_element;
 
-  GST_LP_SINK_LOCK (lpsink);
+  //GST_LP_SINK_LOCK (lpsink);
 
   switch (type) {
     case GST_LP_SINK_TYPE_AUDIO:
@@ -205,11 +204,8 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
   }
 
   gst_bin_add (lpsink, sink_element);
-  sinkpad = gst_element_get_static_pad (sink_element, "sink");
-  res = gst_ghost_pad_new (pad_name, sinkpad);
-
-  gst_pad_set_active (res, TRUE);
-  gst_element_add_pad (GST_ELEMENT_CAST (lpsink), res);
+  gst_element_set_state (sink_element, GST_STATE_PAUSED);
+  res = gst_ghost_pad_new_no_target (pad_name, GST_PAD_SINK);
 
   if (type == GST_LP_SINK_TYPE_AUDIO) {
     lpsink->audio_sink = sink_element;
@@ -219,9 +215,14 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
     lpsink->video_pad = res;
   }
 
+  gst_pad_set_active (res, TRUE);
+  gst_element_add_pad (GST_ELEMENT_CAST (lpsink), res);
+
+  sinkpad = gst_element_get_static_pad (sink_element, "sink");
+  gst_ghost_pad_set_target (GST_GHOST_PAD_CAST (res), sinkpad);
 beach:
 
-  GST_LP_SINK_UNLOCK (lpsink);
+  //GST_LP_SINK_UNLOCK (lpsink);
 
   return res;
 }

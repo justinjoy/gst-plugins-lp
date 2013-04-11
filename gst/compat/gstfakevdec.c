@@ -31,7 +31,7 @@
 
 static GstStaticPadTemplate gst_fakevdec_sink_pad_template =
 GST_STATIC_PAD_TEMPLATE ("sink",
-		GST_PAD_SINK,
+    GST_PAD_SINK,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS (FD_VIDEO_CAPS)
     );
@@ -41,7 +41,7 @@ GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS ("video/x-fd")
-		);
+    );
 
 GST_DEBUG_CATEGORY_STATIC (fakevdec_debug);
 #define GST_CAT_DEFAULT fakevdec_debug
@@ -49,9 +49,11 @@ GST_DEBUG_CATEGORY_STATIC (fakevdec_debug);
 static GstStateChangeReturn
 gst_fakevdec_change_state (GstElement * element, GstStateChange transition);
 
-static gboolean gst_fakevdec_set_caps (GstFakeVdec *fakevdec, GstCaps * caps);
-static gboolean gst_fakevdec_query (GstPad * pad, GstObject * parent, GstQuery * query);
-static gboolean gst_fakevdec_sink_event (GstPad * pad, GstObject * parent, GstEvent * event);
+static gboolean gst_fakevdec_set_caps (GstFakeVdec * fakevdec, GstCaps * caps);
+static gboolean gst_fakevdec_query (GstPad * pad, GstObject * parent,
+    GstQuery * query);
+static gboolean gst_fakevdec_sink_event (GstPad * pad, GstObject * parent,
+    GstEvent * event);
 static GstFlowReturn gst_fakevdec_chain (GstPad * pad, GstObject * parent,
     GstBuffer * buffer);
 
@@ -60,7 +62,7 @@ G_DEFINE_TYPE (GstFakeVdec, gst_fakevdec, GST_TYPE_ELEMENT);
 
 
 static gboolean
-gst_fakevdec_set_caps (GstFakeVdec *fakevdec, GstCaps * caps)
+gst_fakevdec_set_caps (GstFakeVdec * fakevdec, GstCaps * caps)
 {
   //GstStructure *structure;
   gboolean ret;
@@ -71,8 +73,8 @@ gst_fakevdec_set_caps (GstFakeVdec *fakevdec, GstCaps * caps)
   //ret = gst_structure_get_int (structure, "rate", &rate);
   //ret &= gst_structure_get_int (structure, "channels", &channels);
 
-	outcaps = gst_caps_copy (caps);
-  ret = gst_pad_set_caps (fakevdec->srcpad, outcaps); //outcaps);
+  outcaps = gst_caps_copy (caps);
+  ret = gst_pad_set_caps (fakevdec->srcpad, outcaps);   //outcaps);
   gst_caps_unref (outcaps);
 
   return ret;
@@ -85,7 +87,6 @@ gst_fakevdec_get_caps (GstPad * pad, GstCaps * filter)
   GstPad *otherpad;
   GstCaps *othercaps, *result;
   GstCaps *templ;
-  const gchar *name;
 
   fakevdec = GST_FAKEVDEC (GST_PAD_PARENT (pad));
 
@@ -104,7 +105,7 @@ gst_fakevdec_get_caps (GstPad * pad, GstCaps * filter)
   if (othercaps) {
     /* filter against the allowed caps of the pad to return our result */
     result = gst_caps_intersect (othercaps, templ);
-    gst_caps_unref (othercaps); 
+    gst_caps_unref (othercaps);
     gst_caps_unref (templ);
   } else {
     /* there was no peer, return the template caps */
@@ -127,7 +128,7 @@ gst_fakevdec_query (GstPad * pad, GstObject * parent, GstQuery * query)
 
   switch (GST_QUERY_TYPE (query)) {
     case GST_QUERY_CAPS:
-    { 
+    {
       GstCaps *filter, *caps;
 
       gst_query_parse_caps (query, &filter);
@@ -169,49 +170,47 @@ static void
 gst_fakevdec_init (GstFakeVdec * fakevdec)
 {
   fakevdec->sinkpad =
-      gst_pad_new_from_static_template (&gst_fakevdec_sink_pad_template, "sink");
+      gst_pad_new_from_static_template (&gst_fakevdec_sink_pad_template,
+      "sink");
   gst_pad_set_event_function (fakevdec->sinkpad,
       GST_DEBUG_FUNCPTR (gst_fakevdec_sink_event));
   gst_pad_set_chain_function (fakevdec->sinkpad,
       GST_DEBUG_FUNCPTR (gst_fakevdec_chain));
-	//gst_pad_set_query_function (fakevdec->sinkpad,
-	//		GST_DEBUG_FUNCPTR (gst_fakevdec_query));
+  //gst_pad_set_query_function (fakevdec->sinkpad,
+  //              GST_DEBUG_FUNCPTR (gst_fakevdec_query));
   gst_element_add_pad (GST_ELEMENT (fakevdec), fakevdec->sinkpad);
 
   fakevdec->srcpad =
       gst_pad_new_from_static_template (&gst_fakevdec_src_pad_template, "src");
-	//gst_pad_set_query_function (fakevdec->srcpad,
-	//		GST_DEBUG_FUNCPTR (gst_fakevdec_query));
+  //gst_pad_set_query_function (fakevdec->srcpad,
+  //              GST_DEBUG_FUNCPTR (gst_fakevdec_query));
   //gst_pad_use_fixed_caps (fakevdec->srcpad);
   gst_element_add_pad (GST_ELEMENT (fakevdec), fakevdec->srcpad);
-
-	fakevdec->src_caps_set = FALSE;
 }
 
 static gboolean
 gst_fakevdec_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
-	GstFakeVdec *fakevdec;
-	gboolean res;
+  GstFakeVdec *fakevdec;
+  gboolean res;
 
-	fakevdec = GST_FAKEVDEC (parent);
+  fakevdec = GST_FAKEVDEC (parent);
 
-	switch (GST_EVENT_TYPE(event)) {
-		case GST_EVENT_CAPS:
-			{
-				GstCaps *caps;
+  switch (GST_EVENT_TYPE (event)) {
+    case GST_EVENT_CAPS:
+    {
+      GstCaps *caps;
+      gst_event_parse_caps (event, &caps);
+      gst_fakevdec_set_caps (fakevdec, caps);
+      gst_event_unref (event);
+    }
+      break;
+    default:
+      res = gst_pad_event_default (pad, parent, event);
+      break;
+  }
 
-				gst_event_parse_caps (event, &caps);
-				gst_fakevdec_set_caps (fakevdec, caps);
-				gst_event_unref (event);
-			}
-			break;
-		default:
-			res = gst_pad_event_default (pad, parent, event);
-			break;
-	}
-
-	return res;
+  return res;
 }
 
 
@@ -224,20 +223,6 @@ gst_fakevdec_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
   GstFlowReturn ret;
 
   fakevdec = GST_FAKEVDEC (parent);
-
-	if (!fakevdec->src_caps_set) {
-		GstCaps *sink_caps;
-		GstCaps *target_caps;
-
-		sink_caps = gst_pad_get_current_caps (pad);
-		//FIXME gst_pad_get_current_caps increase reference count, need to unref code.
-
-		target_caps = gst_caps_copy (sink_caps);
-
-		gst_pad_set_caps (fakevdec->srcpad, target_caps);
-
-		fakevdec->src_caps_set = TRUE;
-	}
 
   GST_LOG_OBJECT (fakevdec, "buffer with ts=%" GST_TIME_FORMAT,
       GST_TIME_ARGS (GST_BUFFER_TIMESTAMP (buffer)));
@@ -262,8 +247,8 @@ gst_fakevdec_change_state (GstElement * element, GstStateChange transition)
   //GstFakeVdec *fakevdec = GST_FAKEVDEC (element);
 
   switch (transition) {
-		case GST_STATE_CHANGE_READY_TO_PAUSED:
-			break;
+    case GST_STATE_CHANGE_READY_TO_PAUSED:
+      break;
     default:
       break;
   }
