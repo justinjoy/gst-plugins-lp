@@ -19,42 +19,40 @@
  * Boston, MA 02111-1307, USA.
  */
 
-
 #ifndef __GST_FAKEVDEC_H__
 #define __GST_FAKEVDEC_H__
 
 #include <gst/gst.h>
-#include <gst/video/gstvideodecoder.h>
 
 G_BEGIN_DECLS
 
-#define GST_TYPE_FAKEVDEC (gst_fakevdec_get_type())
-#define GST_FAKEVDEC(obj) (G_TYPE_CHECL_INSTANCE_CAST((obj),GST_TYPE_FAKEVDEC,GstFakeVdec))
-#define GST_FAKEVDEC_CLASS(klass) (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_FAKEVDEC,GstFakeVdecClass))
-#define GST_IS_FAKEVDEC(obj) (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_FAKEVDEC))
-#define GST_IS_FAKEVDEC_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_FAKEVDEC))
+#define GST_TYPE_FAKEVDEC \
+  (gst_fakevdec_get_type())
+#define GST_FAKEVDEC(obj) \
+  (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_FAKEVDEC,GstFakeVdec))
+#define GST_FAKEVDEC_CLASS(klass) \
+  (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_FAKEVDEC,GstFakeVdecClass))
+#define GST_IS_FAKEVDEC(obj) \
+  (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_FAKEVDEC))
+#define GST_IS_FAKEVDEC_CLASS(klass) \
+  (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_FAKEVDEC))
 
 typedef struct _GstFakeVdec GstFakeVdec;
 typedef struct _GstFakeVdecClass GstFakeVdecClass;
 
-struct _GstFakeVdec
-{
-  GstVideoDecoder parent;
+struct _GstFakeVdec {
+  GstElement element;
 
-  GstVideoCodecState *input_state;
-  GstVideoCodecState *output_state;
-  GstMapInfo current_frame_map;
-  GstVideoCodecFrame *current_frame;
-
-  GstFlowReturn ret;
+  GstPad *sinkpad,*srcpad;
+	gboolean src_caps_set;
 };
 
-struct _GstFakeVdecClass
-{
-  GstVideoDecoderClass parent_class;
+struct _GstFakeVdecClass {
+  GstElementClass parent_class;
 };
 
-GType gst_fakevdec_get_type (void);
+GType gst_fakevdec_get_type(void);
 
 G_END_DECLS
-#endif // __GST_FAKEVDEC_H__
+
+#endif /* __GST_FAKEVDEC_H__ */

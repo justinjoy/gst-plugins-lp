@@ -1,12 +1,10 @@
-/* GStreamer Lightweight Plugins
- * Copyright (C) 2013 LG Electronics.
- *	Author : Wonchul Lee <wonchul86.lee@lge.com> 
- *	         Justin Joy <justin.joy.9to5@gmail.com> 
+/* GStreamer A-Law to PCM conversion
+ * Copyright (C) 2000 by Abramo Bagnara <abramo@alsa-project.org>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -18,7 +16,11 @@
  * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
  * Boston, MA 02111-1307, USA.
  */
-
+/**
+ * SECTION:element-fakevdecdec
+ *
+ * This element decodes alaw audio. Alaw coding is also known as G.711.
+ */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -27,61 +29,138 @@
 #include "gstfakevdec.h"
 #include "gstfdcaps.h"
 
-#include <stdlib.h>
-#include <string.h>
-#include <gst/video/video.h>
-#include <gst/video/gstvideometa.h>
-#include <gst/video/gstvideopool.h>
-
-GST_DEBUG_CATEGORY_STATIC (fakevdec_debug);
-#define GST_CAT_DEFAULT fakevdec_debug
-
-static gboolean gst_fakevdec_reset (GstVideoDecoder * decoder, gboolean hard);
-static gboolean gst_fakevdec_start (GstVideoDecoder * decoder);
-static gboolean gst_fakevdec_stop (GstVideoDecoder * decoder);
-static gboolean gst_fakevdec_set_format (GstVideoDecoder * Decoder,
-    GstVideoCodecState * state);
-static GstFlowReturn gst_fakevdec_handle_frame (GstVideoDecoder * decoder,
-    GstVideoCodecFrame * frame);
-static gboolean gst_fakevdec_decide_allocation (GstVideoDecoder * decoder,
-    GstQuery * query);
-
-#define parent_class gst_fakevdec_parent_class
-G_DEFINE_TYPE (GstFakeVdec, gst_fakevdec, GST_TYPE_VIDEO_DECODER);
-
 static GstStaticPadTemplate gst_fakevdec_sink_pad_template =
-GST_STATIC_PAD_TEMPLATE ("sink", GST_PAD_SINK,
+GST_STATIC_PAD_TEMPLATE ("sink",
+		GST_PAD_SINK,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS (FD_VIDEO_CAPS)
     );
 
-static GstStaticPadTemplate gst_fakevdec_src_pad_template = GST_STATIC_PAD_TEMPLATE ("src",
+static GstStaticPadTemplate gst_fakevdec_src_pad_template =
+GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS ("video/x-fd")
-    );
+		);
+
+GST_DEBUG_CATEGORY_STATIC (fakevdec_debug);
+#define GST_CAT_DEFAULT fakevdec_debug
+
+static GstStateChangeReturn
+gst_fakevdec_change_state (GstElement * element, GstStateChange transition);
+
+static gboolean gst_fakevdec_set_caps (GstFakeVdec *fakevdec, GstCaps * caps);
+static gboolean gst_fakevdec_query (GstPad * pad, GstObject * parent, GstQuery * query);
+static gboolean gst_fakevdec_sink_event (GstPad * pad, GstObject * parent, GstEvent * event);
+static GstFlowReturn gst_fakevdec_chain (GstPad * pad, GstObject * parent,
+    GstBuffer * buffer);
+
+#define gst_fakevdec_parent_class parent_class
+G_DEFINE_TYPE (GstFakeVdec, gst_fakevdec, GST_TYPE_ELEMENT);
+
+
+static gboolean
+gst_fakevdec_set_caps (GstFakeVdec *fakevdec, GstCaps * caps)
+{
+  //GstStructure *structure;
+  gboolean ret;
+  GstCaps *outcaps;
+
+  //structure = gst_caps_get_structure (caps, 0); 
+
+  //ret = gst_structure_get_int (structure, "rate", &rate);
+  //ret &= gst_structure_get_int (structure, "channels", &channels);
+
+	outcaps = gst_caps_copy (caps);
+  ret = gst_pad_set_caps (fakevdec->srcpad, outcaps); //outcaps);
+  gst_caps_unref (outcaps);
+
+  return ret;
+}
+
+static GstCaps *
+gst_fakevdec_get_caps (GstPad * pad, GstCaps * filter)
+{
+  GstFakeVdec *fakevdec;
+  GstPad *otherpad;
+  GstCaps *othercaps, *result;
+  GstCaps *templ;
+  const gchar *name;
+
+  fakevdec = GST_FAKEVDEC (GST_PAD_PARENT (pad));
+
+  /* figure out the name of the caps we are going to return */
+  if (pad == fakevdec->srcpad) {
+    otherpad = fakevdec->sinkpad;
+  } else {
+    otherpad = fakevdec->srcpad;
+  }
+  /* get caps from the peer, this can return NULL when there is no peer */
+  othercaps = gst_pad_peer_query_caps (otherpad, NULL);
+
+  /* get the template caps to make sure we return something acceptable */
+  templ = gst_pad_get_pad_template_caps (pad);
+
+  if (othercaps) {
+    /* filter against the allowed caps of the pad to return our result */
+    result = gst_caps_intersect (othercaps, templ);
+    gst_caps_unref (othercaps); 
+    gst_caps_unref (templ);
+  } else {
+    /* there was no peer, return the template caps */
+    result = templ;
+  }
+  if (filter && result) {
+    GstCaps *temp;
+
+    temp = gst_caps_intersect (result, filter);
+    gst_caps_unref (result);
+    result = temp;
+  }
+  return result;
+}
+
+static gboolean
+gst_fakevdec_query (GstPad * pad, GstObject * parent, GstQuery * query)
+{
+  gboolean res;
+
+  switch (GST_QUERY_TYPE (query)) {
+    case GST_QUERY_CAPS:
+    { 
+      GstCaps *filter, *caps;
+
+      gst_query_parse_caps (query, &filter);
+      caps = gst_fakevdec_get_caps (pad, filter);
+      gst_query_set_caps_result (query, caps);
+      gst_caps_unref (caps);
+
+      res = TRUE;
+      break;
+    }
+    default:
+      res = gst_pad_query_default (pad, parent, query);
+      break;
+  }
+  return res;
+}
 
 static void
 gst_fakevdec_class_init (GstFakeVdecClass * klass)
 {
-  GstElementClass *element_class = (GstElementClass *) klass;
-  GstVideoDecoderClass *vdec_class = (GstVideoDecoderClass *) klass;
+  GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
 
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&gst_fakevdec_src_pad_template));
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&gst_fakevdec_sink_pad_template));
+
   gst_element_class_set_static_metadata (element_class, "Fake Video decoder",
       "Codec/Decoder/Video",
       "Pass data to backend decoder",
       "Wonchul Lee <wonchul86.lee@lge.com>,Justin Joy <justin.joy.9to5@gmail.com>");
 
-  vdec_class->start = gst_fakevdec_start;
-  vdec_class->stop = gst_fakevdec_stop;
-  vdec_class->reset = gst_fakevdec_reset;
-  vdec_class->set_format = gst_fakevdec_set_format;
-  vdec_class->handle_frame = gst_fakevdec_handle_frame;
-//  vdec_class->decide_allocation = gst_fakevdec_decide_allocation;
+  element_class->change_state = GST_DEBUG_FUNCPTR (gst_fakevdec_change_state);
 
   GST_DEBUG_CATEGORY_INIT (fakevdec_debug, "fakevdec", 0, "Fake video decoder");
 }
@@ -89,94 +168,114 @@ gst_fakevdec_class_init (GstFakeVdecClass * klass)
 static void
 gst_fakevdec_init (GstFakeVdec * fakevdec)
 {
-  GST_DEBUG_OBJECT (fakevdec, "initializing");
+  fakevdec->sinkpad =
+      gst_pad_new_from_static_template (&gst_fakevdec_sink_pad_template, "sink");
+  gst_pad_set_event_function (fakevdec->sinkpad,
+      GST_DEBUG_FUNCPTR (gst_fakevdec_sink_event));
+  gst_pad_set_chain_function (fakevdec->sinkpad,
+      GST_DEBUG_FUNCPTR (gst_fakevdec_chain));
+	//gst_pad_set_query_function (fakevdec->sinkpad,
+	//		GST_DEBUG_FUNCPTR (gst_fakevdec_query));
+  gst_element_add_pad (GST_ELEMENT (fakevdec), fakevdec->sinkpad);
+
+  fakevdec->srcpad =
+      gst_pad_new_from_static_template (&gst_fakevdec_src_pad_template, "src");
+	//gst_pad_set_query_function (fakevdec->srcpad,
+	//		GST_DEBUG_FUNCPTR (gst_fakevdec_query));
+  //gst_pad_use_fixed_caps (fakevdec->srcpad);
+  gst_element_add_pad (GST_ELEMENT (fakevdec), fakevdec->srcpad);
+
+	fakevdec->src_caps_set = FALSE;
 }
 
 static gboolean
-gst_fakevdec_start (GstVideoDecoder * decoder)
+gst_fakevdec_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
-  GstFakeVdec *fakevdec = (GstFakeVdec *) decoder;
+	GstFakeVdec *fakevdec;
+	gboolean res;
 
-  GST_DEBUG_OBJECT (fakevdec, "starting");
-  return TRUE;
+	fakevdec = GST_FAKEVDEC (parent);
+
+	switch (GST_EVENT_TYPE(event)) {
+		case GST_EVENT_CAPS:
+			{
+				GstCaps *caps;
+
+				gst_event_parse_caps (event, &caps);
+				gst_fakevdec_set_caps (fakevdec, caps);
+				gst_event_unref (event);
+			}
+			break;
+		default:
+			res = gst_pad_event_default (pad, parent, event);
+			break;
+	}
+
+	return res;
 }
 
-static gboolean
-gst_fakevdec_stop (GstVideoDecoder * decoder)
-{
-  GstFakeVdec *fakevdec = (GstFakeVdec *) decoder;
-
-  GST_DEBUG_OBJECT (fakevdec, "stopping");
-  return TRUE;
-}
-
-static gboolean
-gst_fakevdec_reset (GstVideoDecoder * decoder, gboolean hard)
-{
-  return TRUE;
-}
-
-static gboolean
-gst_fakevdec_set_format (GstVideoDecoder * decoder, GstVideoCodecState * state)
-{
-  GstFakeVdec *fakevdec = (GstFakeVdec *) decoder;
-  GstCaps *target_caps;
-
-  GST_DEBUG_OBJECT (state->caps, "getting state caps");
-  target_caps = gst_caps_copy (state->caps); 
-
-  gst_caps_make_writable (target_caps);
-//  gst_caps_replace (decoder->srcpad, target_caps);
-  gst_caps_set_simple (target_caps, "passed_fakedecoder", G_TYPE_BOOLEAN, TRUE, NULL); 
-  gst_pad_set_caps(decoder->srcpad, target_caps);
-
-  return TRUE;
-}
 
 static GstFlowReturn
-gst_fakevdec_handle_frame (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
+gst_fakevdec_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
 {
-  GstFakeVdec *fakevdec = (GstFakeVdec *) decoder;
-  GstFlowReturn ret = GST_FLOW_OK;
+  GstFakeVdec *fakevdec;
+  GstMapInfo inmap;
+  GstBuffer *outbuf;
+  GstFlowReturn ret;
 
-  GST_LOG_OBJECT (fakevdec,
-      "Received new data of size %u, dts %" GST_TIME_FORMAT ", pts:%"
-      GST_TIME_FORMAT ", dur:%" GST_TIME_FORMAT,
-      gst_buffer_get_size (frame->input_buffer),
-      GST_TIME_ARGS (frame->dts),
-      GST_TIME_ARGS (frame->pts), GST_TIME_ARGS (frame->duration));
+  fakevdec = GST_FAKEVDEC (parent);
 
-  frame->output_buffer = gst_buffer_copy(frame->input_buffer);
-  ret = gst_video_decoder_finish_frame (GST_VIDEO_DECODER (decoder), frame);   
+	if (!fakevdec->src_caps_set) {
+		GstCaps *sink_caps;
+		GstCaps *target_caps;
+
+		sink_caps = gst_pad_get_current_caps (pad);
+		//FIXME gst_pad_get_current_caps increase reference count, need to unref code.
+
+		target_caps = gst_caps_copy (sink_caps);
+
+		gst_pad_set_caps (fakevdec->srcpad, target_caps);
+
+		fakevdec->src_caps_set = TRUE;
+	}
+
+  GST_LOG_OBJECT (fakevdec, "buffer with ts=%" GST_TIME_FORMAT,
+      GST_TIME_ARGS (GST_BUFFER_TIMESTAMP (buffer)));
+
+  gst_buffer_map (buffer, &inmap, GST_MAP_READ);
+
+  outbuf = gst_buffer_copy (buffer);
+
+  gst_buffer_unmap (buffer, &inmap);
+  gst_buffer_unref (buffer);
+
+  ret = gst_pad_push (fakevdec->srcpad, outbuf);
+
+  return ret;
+
+}
+
+static GstStateChangeReturn
+gst_fakevdec_change_state (GstElement * element, GstStateChange transition)
+{
+  GstStateChangeReturn ret;
+  //GstFakeVdec *fakevdec = GST_FAKEVDEC (element);
+
+  switch (transition) {
+		case GST_STATE_CHANGE_READY_TO_PAUSED:
+			break;
+    default:
+      break;
+  }
+
+  ret = GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
+  if (ret != GST_STATE_CHANGE_SUCCESS)
+    return ret;
+
+  switch (transition) {
+    default:
+      break;
+  }
+
   return ret;
 }
-
-static gboolean
-gst_fakevdec_decide_allocation (GstVideoDecoder * bdec, GstQuery * query)
-{
-  GstBufferPool *pool = NULL;
-  GstStructure *config;
-  
-  GST_DEBUG_OBJECT (bdec, "allocation");
-
-  if (!GST_VIDEO_DECODER_CLASS (parent_class)->decide_allocation (bdec, query))
-    return FALSE;
-
-  if (gst_query_get_n_allocation_pools (query) > 0)
-    gst_query_parse_nth_allocation_pool (query, 0, &pool, NULL, NULL, NULL);
-
-  if (pool == NULL)
-    return FALSE;
-
-  config = gst_buffer_pool_get_config (pool);
-  if (gst_query_find_allocation_meta (query, GST_VIDEO_META_API_TYPE, NULL)) {
-    gst_buffer_pool_config_add_option (config,
-        GST_BUFFER_POOL_OPTION_VIDEO_META);
-  }
-  gst_buffer_pool_set_config (pool, config);
-  gst_object_unref (pool);
-
-  return TRUE;
-}
-
-
