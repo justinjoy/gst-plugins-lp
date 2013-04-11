@@ -1,7 +1,6 @@
 /* GStreamer Lightweight Plugins
  * Copyright (C) 2013 LG Electronics.
- *	Author : Wonchul Lee <wonchul86.lee@lge.com> 
- *	         Justin Joy <justin.joy.9to5@gmail.com> 
+ *	Author : Justin Joy <justin.joy.9to5@gmail.com> 
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -19,42 +18,35 @@
  * Boston, MA 02111-1307, USA.
  */
 
+
 #ifndef __GST_FAKEADEC_H__
 #define __GST_FAKEADEC_H__
 
 #include <gst/gst.h>
-#include <gst/audio/audio.h>
+#include <gst/base/gstbaseparse.h>
 
 G_BEGIN_DECLS
-
-#define GST_TYPE_FAKEADEC \
-  (gst_fakeadec_get_type())
-#define GST_FAKEADEC(obj) \
-  (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_FAKEADEC,GstFakeAdec))
-#define GST_FAKEADEC_CLASS(klass) \
-  (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_FAKEADEC,GstFakeAdecClass))
-#define GST_IS_FAKEADEC(obj) \
-  (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_FAKEADEC))
-#define GST_IS_FAKEADEC_CLASS(klass) \
-  (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_FAKEADEC))
-
+#define GST_TYPE_FAKEADEC (gst_fakeadec_get_type())
+#define GST_FAKEADEC(obj) (G_TYPE_CHECL_INSTANCE_CAST((obj),GST_TYPE_FAKEADEC,GstFakeAdec))
+#define GST_FAKEADEC_CLASS(klass) (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_FAKEADEC,GstFakeAdecClass))
+#define GST_IS_FAKEADEC(obj) (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_FAKEADEC))
+#define GST_IS_FAKEADEC_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_FAKEADEC))
 typedef struct _GstFakeAdec GstFakeAdec;
 typedef struct _GstFakeAdecClass GstFakeAdecClass;
 
-struct _GstFakeAdec {
-  GstElement element;
+struct _GstFakeAdec
+{
+  GstBaseParse parent;
 
-  GstPad *sinkpad,*srcpad;
-	gboolean src_caps_set;
+  GstFlowReturn ret;
 };
 
-struct _GstFakeAdecClass {
-  GstElementClass parent_class;
+struct _GstFakeAdecClass
+{
+  GstBaseParseClass parent_class;
 };
 
-GType gst_fakeadec_get_type(void);
+GType gst_fakeadec_get_type (void);
 
 G_END_DECLS
-
-#endif /* __GST_FAKEADEC_H__ */
-
+#endif // __GST_FAKEADEC_H__
