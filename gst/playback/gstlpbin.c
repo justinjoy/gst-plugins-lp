@@ -230,14 +230,14 @@ pad_added_cb (GstElement * decodebin, GstPad * pad, GstLpBin * lpbin)
       "pad %s:%s with caps %" GST_PTR_FORMAT " added",
       GST_DEBUG_PAD_NAME (pad), caps);
   if (g_str_has_prefix (name, "video/")) {
-    nvideo++;
-//    sink_name = "video_sink";
+//    nvideo++;
+    sink_name = "video_sink";
   } else if (g_str_has_prefix (name, "audio/")) {
-    naudio++;
-//    sink_name = "audio_sink";
+//    naudio++;
+    sink_name = "audio_sink";
   }
-//  lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, sink_name);
-//  ret = gst_pad_link (pad, lpsink_sinkpad);
+  lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, sink_name);
+  ret = gst_pad_link (pad, lpsink_sinkpad);
 }
 
 static void
@@ -292,7 +292,7 @@ gst_lp_bin_change_state (GstElement * element, GstStateChange transition)
       gst_lp_bin_setup_element (lpbin);
       break;
     case GST_STATE_CHANGE_READY_TO_PAUSED:
-      gst_lp_bin_make_link(lpbin);
+//      gst_lp_bin_make_link(lpbin);
       break;
     default:
       break;
