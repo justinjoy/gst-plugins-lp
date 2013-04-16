@@ -1,12 +1,10 @@
-/* GStreamer Lightweight Plugins
- * Copyright (C) 2013 LG Electronics.
- *	Author : Wonchul86 Lee <wonchul86.lee@lge.com> 
- *	         Justin Joy <justin.joy.9to5@gmail.com> 
+/* GStreamer A-Law to PCM conversion
+ * Copyright (C) 2000 by Abramo Bagnara <abramo@alsa-project.org>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -18,7 +16,11 @@
  * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
  * Boston, MA 02111-1307, USA.
  */
-
+/**
+ * SECTION:element-fakeadecdec
+ *
+ * This element decodes alaw audio. Alaw coding is also known as G.711.
+ */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -27,24 +29,9 @@
 #include "gstfakeadec.h"
 #include "gstfdcaps.h"
 
-#include <stdlib.h>
-#include <string.h>
-#include <gst/audio/audio.h>
-
-GST_DEBUG_CATEGORY_STATIC (fakeadec_debug);
-#define GST_CAT_DEFAULT fakeadec_debug
-
-static gboolean gst_fakeadec_reset (GstBaseParse * decoder, gboolean hard);
-static gboolean gst_fakeadec_start (GstBaseParse * decoder);
-static gboolean gst_fakeadec_stop (GstBaseParse * decoder);
-static GstFlowReturn gst_fakeadec_handle_frame (GstBaseParse * decoder,
-GstBaseParseFrame * frame, gint * skipsize);
-
-#define parent_class gst_fakeadec_parent_class
-G_DEFINE_TYPE (GstFakeAdec, gst_fakeadec, GST_TYPE_BASE_PARSE);
-
 static GstStaticPadTemplate gst_fakeadec_sink_pad_template =
-GST_STATIC_PAD_TEMPLATE ("sink", GST_PAD_SINK,
+GST_STATIC_PAD_TEMPLATE ("sink",
+		GST_PAD_SINK,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS (FD_AUDIO_CAPS)
     );
@@ -54,79 +41,183 @@ GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS ("audio/x-fd")
-    );
+		);
 
+GST_DEBUG_CATEGORY_STATIC (fakeadec_debug);
+#define GST_CAT_DEFAULT fakeadec_debug
+
+static gboolean gst_fakeadec_set_caps (GstFakeAdec *fakeadec, GstCaps * caps);
+static gboolean gst_fakeadec_sink_event (GstPad * pad, GstObject * parent, GstEvent * event);
+static GstStateChangeReturn
+gst_fakeadec_change_state (GstElement * element, GstStateChange transition);
+
+static GstFlowReturn gst_fakeadec_chain (GstPad * pad, GstObject * parent,
+    GstBuffer * buffer);
+
+#define gst_fakeadec_parent_class parent_class
+G_DEFINE_TYPE (GstFakeAdec, gst_fakeadec, GST_TYPE_ELEMENT);
+
+
+static gboolean
+gst_fakeadec_set_caps (GstFakeAdec *fakeadec, GstCaps * caps)
+{
+  //GstStructure *structure;
+  gboolean ret;
+  GstCaps *outcaps;
+
+  //structure = gst_caps_get_structure (caps, 0); 
+
+  //ret = gst_structure_get_int (structure, "rate", &rate);
+  //ret &= gst_structure_get_int (structure, "channels", &channels);
+
+	outcaps = gst_caps_copy (caps);
+  ret = gst_pad_set_caps (fakeadec->srcpad, outcaps); //outcaps);
+  gst_caps_unref (outcaps);
+
+  return ret;
+}
+
+/*
+static gboolean
+gst_fakeadec_src_query (GstPad * pad, GstObject * parent, GstQuery *query)
+{
+	gboolean res;
+	
+	GstFakeAdec *fakeadec = GST_FAKEADEC (gst_pad_get_parent (pad));
+
+	switch (GST_QUERY_TYPE (query)) {
+		case GST_QUERY_CAPS:
+		{
+			GstCaps *sink_caps;
+		
+			sink_caps = gst_pad_get_current_caps (fakeadec->sinkpad);
+			gst_query_set_caps_result (query, sink_caps);
+			//FIXME gst_pad_get_current_caps increase reference count, need to unref code.
+
+			res = TRUE;
+			break;
+		}
+		default :
+			res = gst_pad_query_default (pad, parent, query);
+			break;
+	}
+
+	g_object_unref (fakeadec);
+	return res;
+}
+*/
 static void
 gst_fakeadec_class_init (GstFakeAdecClass * klass)
 {
-  GstElementClass *element_class = (GstElementClass *) klass;
-  GstBaseParseClass *adec_class = (GstBaseParseClass *) klass;
+  GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
 
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&gst_fakeadec_src_pad_template));
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&gst_fakeadec_sink_pad_template));
+
   gst_element_class_set_static_metadata (element_class, "Fake Audio decoder",
-      "Codec/Decoder/Audio",
+      "Codec/Decoder/Video",
       "Pass data to backend decoder",
-      "Wonchul86 Lee <wonchul86.lee@lge.com>,Justin Joy <justin.joy.9to5@gmail.com>");
+      "Wonchul Lee <wonchul86.lee@lge.com>,Justin Joy <justin.joy.9to5@gmail.com>");
 
-  //adec_class->start = gst_fakeadec_start;
-  //adec_class->stop = gst_fakeadec_stop;
-  //adec_class->reset = gst_fakeadec_reset;
-  adec_class->handle_frame = gst_fakeadec_handle_frame;
+  element_class->change_state = GST_DEBUG_FUNCPTR (gst_fakeadec_change_state);
 
-  GST_DEBUG_CATEGORY_INIT (fakeadec_debug, "fakeadec", 0, "Fake audio decoder");
+  GST_DEBUG_CATEGORY_INIT (fakeadec_debug, "fakeadec", 0, "Fake video decoder");
 }
 
 static void
 gst_fakeadec_init (GstFakeAdec * fakeadec)
 {
-  GST_DEBUG_OBJECT (fakeadec, "initializing");
+  fakeadec->sinkpad =
+      gst_pad_new_from_static_template (&gst_fakeadec_sink_pad_template, "sink");
+  gst_pad_set_chain_function (fakeadec->sinkpad,
+      GST_DEBUG_FUNCPTR (gst_fakeadec_chain));
+  gst_pad_set_event_function (fakeadec->sinkpad,
+      GST_DEBUG_FUNCPTR (gst_fakeadec_sink_event));
+  gst_element_add_pad (GST_ELEMENT (fakeadec), fakeadec->sinkpad);
+
+  fakeadec->srcpad =
+      gst_pad_new_from_static_template (&gst_fakeadec_src_pad_template, "src");
+	/*gst_pad_set_query_function (fakeadec->srcpad,
+			GST_DEBUG_FUNCPTR (gst_fakeadec_src_query));*/
+  gst_element_add_pad (GST_ELEMENT (fakeadec), fakeadec->srcpad);
+
+	fakeadec->src_caps_set = FALSE;
 }
 
 static gboolean
-gst_fakeadec_start (GstBaseParse * decoder)
+gst_fakeadec_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
-  GstFakeAdec *fakeadec = (GstFakeAdec *) decoder;
+	GstFakeAdec *fakeadec;
+	gboolean res;
 
-  GST_DEBUG_OBJECT (fakeadec, "starting");
-  return TRUE;
+	fakeadec = GST_FAKEADEC (parent);
+
+	switch (GST_EVENT_TYPE(event)) {
+		case GST_EVENT_CAPS:
+			{
+				GstCaps *caps;
+
+				gst_event_parse_caps (event, &caps);
+				gst_fakeadec_set_caps (fakeadec, caps);
+				gst_event_unref (event);
+			}
+			break;
+		default:
+			res = gst_pad_event_default (pad, parent, event);
+			break;
+	}
+
+	return res;
 }
 
-static gboolean
-gst_fakeadec_stop (GstBaseParse * decoder)
-{
-  GstFakeAdec *fakeadec = (GstFakeAdec *) decoder;
-
-  GST_DEBUG_OBJECT (fakeadec, "stopping");
-  return TRUE;
-}
-
-static gboolean
-gst_fakeadec_reset (GstBaseParse * decoder, gboolean hard)
-{
-  return TRUE;
-}
 
 static GstFlowReturn
-gst_fakeadec_handle_frame (GstBaseParse * decoder, GstBaseParseFrame * frame, gint * skipsize)
+gst_fakeadec_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
 {
-  GstFakeAdec *fakeadec = (GstFakeAdec *) decoder;
-  GstFlowReturn ret = GST_FLOW_OK;
-	gsize size;
-	GstMapInfo map;
-	GstCaps *sink_caps;
-	GstCaps *target_caps;
+  GstFakeAdec *fakeadec;
+  GstMapInfo inmap;
+  GstBuffer *outbuf;
+  GstFlowReturn ret;
 
-	sink_caps = gst_pad_get_current_caps (GST_BASE_PARSE_SINK_PAD(decoder));
-	target_caps = gst_caps_copy (sink_caps);
-	gst_pad_set_caps (GST_BASE_PARSE_SRC_PAD(decoder), target_caps);
+  fakeadec = GST_FAKEADEC (parent);
 
-	gst_buffer_map (frame->buffer, &map, GST_MAP_READ);
-	size = map.size;
-	gst_buffer_unmap (frame->buffer, &map);
-	frame->out_buffer = gst_buffer_copy (frame->buffer);
-	ret = gst_base_parse_finish_frame (decoder, frame, size);
+  GST_LOG_OBJECT (fakeadec, "buffer with ts=%" GST_TIME_FORMAT,
+      GST_TIME_ARGS (GST_BUFFER_TIMESTAMP (buffer)));
+
+  gst_buffer_map (buffer, &inmap, GST_MAP_READ);
+
+  outbuf = gst_buffer_copy (buffer);
+
+  gst_buffer_unmap (buffer, &inmap);
+  gst_buffer_unref (buffer);
+
+  ret = gst_pad_push (fakeadec->srcpad, outbuf);
+
+  return ret;
+
+}
+
+static GstStateChangeReturn
+gst_fakeadec_change_state (GstElement * element, GstStateChange transition)
+{
+  GstStateChangeReturn ret;
+  //GstFakeAdec *fakeadec = GST_FAKEADEC (element);
+
+  switch (transition) {
+    default:
+      break;
+  }
+
+  ret = GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
+  if (ret != GST_STATE_CHANGE_SUCCESS)
+    return ret;
+
+  switch (transition) {
+    default:
+      break;
+  }
+
   return ret;
 }
