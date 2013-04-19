@@ -43,6 +43,7 @@ struct _GstLpBin
   GRecMutex lock;               /* to protect group switching */
 
   GstElement *uridecodebin;
+  GstElement *fcbin;
   GstElement *lpsink;
   GstFlowReturn ret;
 
@@ -53,6 +54,7 @@ struct _GstLpBin
   guint naudio;
   guint nvideo;
   guint ntext;
+
 };
 
 struct _GstLpBinClass

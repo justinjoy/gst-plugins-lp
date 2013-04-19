@@ -135,6 +135,7 @@ gst_lp_bin_init (GstLpBin * lpbin)
       "Lightweight Play Bin");
   g_rec_mutex_init (&lpbin->lock);
   lpbin->uridecodebin = NULL;
+  lpbin->fcbin = NULL;
   lpbin->lpsink = NULL;
 
   lpbin->naudio = 0;
@@ -223,10 +224,15 @@ pad_added_cb (GstElement * decodebin, GstPad * pad, GstLpBin * lpbin)
   gint ret;
   GstPad *sinkpad;
   GstElement *sink_element;
+	GstPad *fcbin_sinkpad, *fcbin_srcpad;
+	GstPadTemplate *tmpl;
+
 
   caps = gst_pad_query_caps (pad, NULL);
   s = gst_caps_get_structure (caps, 0);
   name = gst_structure_get_name (s);
+
+	tmpl = gst_pad_template_new (name, GST_PAD_SINK, GST_PAD_REQUEST, caps);
 
   GST_DEBUG_OBJECT (lpbin,
       "pad %s:%s with caps %" GST_PTR_FORMAT " added",
@@ -239,8 +245,15 @@ pad_added_cb (GstElement * decodebin, GstPad * pad, GstLpBin * lpbin)
     sink_name = "audio_sink";
   }
 
+	fcbin_sinkpad = gst_element_request_pad (lpbin->fcbin, tmpl, name, caps);
+	ret = gst_pad_link (pad, fcbin_sinkpad);
+
+	fcbin_srcpad = g_object_get_data (G_OBJECT (fcbin_sinkpad), "fcbin.srcpad");
+
   lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, sink_name);
-  ret = gst_pad_link (pad, lpsink_sinkpad);
+  ret = gst_pad_link (fcbin_srcpad, lpsink_sinkpad);
+
+	g_object_unref (tmpl);
 
 }
 
@@ -267,10 +280,13 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
 
   gst_bin_add (GST_BIN_CAST (lpbin), lpbin->uridecodebin);
 
+  lpbin->fcbin = gst_element_factory_make ("fcbin", NULL);
+  gst_bin_add (GST_BIN_CAST (lpbin), lpbin->fcbin);
+
   lpbin->lpsink = gst_element_factory_make ("lpsink", NULL);
   gst_bin_add (GST_BIN_CAST (lpbin), lpbin->lpsink);
-
-  g_object_unref (fd_caps);
+  
+	g_object_unref (fd_caps);
 
   return TRUE;
 }

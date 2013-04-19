@@ -26,18 +26,39 @@
 
 G_BEGIN_DECLS
 #define GST_TYPE_FC_BIN (gst_fc_bin_get_type())
-#define GST_FC_BIN(obj) (G_TYPE_CHECL_INSTANCE_CAST((obj),GST_TYPE_FC_BIN,GstFCBin))
+#define GST_FC_BIN(obj) (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_FC_BIN,GstFCBin))
 #define GST_FC_BIN_CLASS(klass) (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_FC_BIN,GstFCBinClass))
 #define GST_IS_FC_BIN(obj) (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_FC_BIN))
 #define GST_IS_FC_BIN_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_FC_BIN))
+typedef struct _GstFCSelect GstFCSelect;
 typedef struct _GstFCBin GstFCBin;
 typedef struct _GstFCBinClass GstFCBinClass;
+
+enum
+{
+	GST_FC_BIN_STREAM_AUDIO = 0,
+	GST_FC_BIN_STREAM_VIDEO,
+	GST_FC_BIN_STREAM_TEXT,
+	GST_FC_BIN_STREAM_LAST
+};
+
+struct _GstFCSelect
+{
+	const gchar *media_list[8];   /* the media types for the selector */
+	GstElement *selector;         /* the selector */
+
+	GPtrArray *channels;
+	GstPad *srcpad;
+	//GstPad *sinkpad;
+};
 
 struct _GstFCBin
 {
   GstBin parent;
 
   GstFlowReturn ret;
+
+	GstFCSelect select[GST_FC_BIN_STREAM_LAST];
 };
 
 struct _GstFCBinClass
