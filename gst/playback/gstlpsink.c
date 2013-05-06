@@ -56,6 +56,7 @@ static GstPad *gst_lp_sink_request_new_pad (GstElement * element,
 static void gst_lp_sink_release_request_pad (GstElement * element,
     GstPad * pad);
 static gboolean gst_lp_sink_send_event (GstElement * element, GstEvent * event);
+static gboolean gst_lp_sink_send_event_to_sink (GstLpSink * lpsink, GstEvent * event);
 static GstStateChangeReturn gst_lp_sink_change_state (GstElement * element,
     GstStateChange transition);
 
@@ -181,7 +182,7 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
 
   switch (type) {
     case GST_LP_SINK_TYPE_AUDIO:
-      sink_name = "adecsink";
+      sink_name = "fakesink";
       pad_name = "audio_sink";
 
       break;
@@ -203,7 +204,7 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
     goto beach;
   }
 
-  gst_bin_add (lpsink, sink_element);
+  gst_bin_add (GST_BIN_CAST(lpsink), sink_element);
   gst_element_set_state (sink_element, GST_STATE_PAUSED);
   res = gst_ghost_pad_new_no_target (pad_name, GST_PAD_SINK);
 
@@ -332,13 +333,47 @@ gst_lp_sink_send_event (GstElement * element, GstEvent * event)
 {
   gboolean res = FALSE;
   GstEventType event_type = GST_EVENT_TYPE (event);
+	GstLpSink *lpsink = GST_LP_SINK  (element);
 
   switch (event_type) {
+		case GST_EVENT_SEEK:
+			GST_DEBUG_OBJECT (element, "Sending event to a sink");
+			res = gst_lp_sink_send_event_to_sink (lpsink, event);
+			break;
     default:
       res = GST_ELEMENT_CLASS (parent_class)->send_event (element, event);
       break;
   }
   return res;
+}
+
+static gboolean
+gst_lp_sink_send_event_to_sink (GstLpSink * lpsink, GstEvent * event)
+{
+	gboolean res = TRUE;
+
+	if (lpsink->video_sink) {
+		gst_event_ref (event);
+		if ((res =
+						gst_element_send_event (lpsink->video_sink, event))) {
+			GST_DEBUG_OBJECT (lpsink, "Sent event successfully to video sink");
+			goto done;
+		}
+		GST_DEBUG_OBJECT (lpsink, "Event failed when sent to video sink");
+	}
+	if (lpsink->audio_sink) {
+		gst_event_ref (event);
+		if ((res =
+						gst_element_send_event (lpsink->audio_sink, event))) {
+			GST_DEBUG_OBJECT (lpsink, "Sent event successfully to audio sink");
+			goto done;
+		}
+		GST_DEBUG_OBJECT (lpsink, "Event failed when sent to audio sink");
+	}
+
+done:
+	gst_event_unref (event);
+	return res;
 }
 
 static GstStateChangeReturn
