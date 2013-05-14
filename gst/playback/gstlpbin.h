@@ -55,6 +55,8 @@ struct _GstLpBin
   guint nvideo;
   guint ntext;
 
+	GstPad * video_pad;		/* contains srcpads of input-selectors for connect with lpsink*/
+	GstPad * audio_pad;
 };
 
 struct _GstLpBinClass

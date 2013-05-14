@@ -55,8 +55,7 @@ static void gst_lp_bin_handle_message (GstBin * bin, GstMessage * message);
 static gboolean gst_lp_bin_query (GstElement * element, GstQuery * query);
 
 /* signal callbacks */
-static void no_more_pads_cb (GstElement * decodebin, GstPad * pad,
-    GstLpBin * lpbin);
+static void no_more_pads_cb (GstElement * decodebin, GstLpBin * lpbin);
 static void pad_added_cb (GstElement * decodebin, GstPad * pad,
     GstLpBin * lpbin);
 
@@ -141,6 +140,9 @@ gst_lp_bin_init (GstLpBin * lpbin)
   lpbin->naudio = 0;
   lpbin->nvideo = 0;
   lpbin->ntext = 0;
+
+	lpbin->video_pad = NULL;
+	lpbin->audio_pad = NULL;
 }
 
 static void
@@ -219,11 +221,6 @@ pad_added_cb (GstElement * decodebin, GstPad * pad, GstLpBin * lpbin)
   GstCaps *caps;
   const GstStructure *s;
   const gchar *name;
-  const gchar *sink_name;
-  GstPad *lpsink_sinkpad;
-  gint ret;
-  GstPad *sinkpad;
-  GstElement *sink_element;
 	GstPad *fcbin_sinkpad, *fcbin_srcpad;
 	GstPadTemplate *tmpl;
 
@@ -237,30 +234,38 @@ pad_added_cb (GstElement * decodebin, GstPad * pad, GstLpBin * lpbin)
   GST_DEBUG_OBJECT (lpbin,
       "pad %s:%s with caps %" GST_PTR_FORMAT " added",
       GST_DEBUG_PAD_NAME (pad), caps);
-  if (g_str_has_prefix (name, "video/")) {
-//    nvideo++;
-    sink_name = "video_sink";
-  } else if (g_str_has_prefix (name, "audio/")) {
-//    naudio++;
-    sink_name = "audio_sink";
-  }
 
 	fcbin_sinkpad = gst_element_request_pad (lpbin->fcbin, tmpl, name, caps);
-	ret = gst_pad_link (pad, fcbin_sinkpad);
+	gst_pad_link (pad, fcbin_sinkpad);
 
 	fcbin_srcpad = g_object_get_data (G_OBJECT (fcbin_sinkpad), "fcbin.srcpad");
 
-  lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, sink_name);
-  ret = gst_pad_link (fcbin_srcpad, lpsink_sinkpad);
+  if (!lpbin->video_pad && g_str_has_prefix (name, "video/")) {
+		lpbin->video_pad = fcbin_srcpad;
+  } else if (!lpbin->audio_pad && g_str_has_prefix (name, "audio/")) {
+		lpbin->audio_pad = fcbin_srcpad;
+  }
 
 	g_object_unref (tmpl);
 
 }
 
 static void
-no_more_pads_cb (GstElement * decodebin, GstPad * pad, GstLpBin * lpbin)
+no_more_pads_cb (GstElement * decodebin, GstLpBin * lpbin)
 {
-  GST_DEBUG_OBJECT (lpbin, "");
+	GstPad * lpsink_sinkpad;
+
+  GST_DEBUG_OBJECT (lpbin, "no more pads callback");
+
+	if (lpbin->video_pad) {
+		lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, "video_sink");
+		gst_pad_link (lpbin->video_pad, lpsink_sinkpad);
+	}
+
+	if (lpbin->audio_pad) {
+		lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, "audio_sink");
+		gst_pad_link (lpbin->audio_pad, lpsink_sinkpad);
+	}
 }
 
 static gboolean
