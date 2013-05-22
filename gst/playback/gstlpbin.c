@@ -32,6 +32,7 @@ enum
 {
   PROP_0,
   PROP_URI,
+  PROP_SOURCE,
   PROP_LAST
 };
 enum
@@ -58,6 +59,7 @@ static gboolean gst_lp_bin_query (GstElement * element, GstQuery * query);
 static void no_more_pads_cb (GstElement * decodebin, GstLpBin * lpbin);
 static void pad_added_cb (GstElement * decodebin, GstPad * pad,
     GstLpBin * lpbin);
+static void notify_source_cb (GstElement * decodebin, GParamSpec * pspec, GstLpBin * lpbin);
 
 /* private functions */
 static gboolean gst_lp_bin_setup_element (GstLpBin * lpbin);
@@ -121,6 +123,15 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
       g_param_spec_string ("uri", "URI", "URI of the media to play",
           NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  g_object_class_install_property (gobject_klass, PROP_SOURCE,
+      g_param_spec_object ("source", "Source", "Source element",
+          GST_TYPE_ELEMENT, G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+
+  gst_lp_bin_signals[SIGNAL_SOURCE_SETUP] =
+      g_signal_new ("source-setup", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST, 0, NULL, NULL,
+      g_cclosure_marshal_generic, G_TYPE_NONE, 1, GST_TYPE_ELEMENT);
+
   gstelement_klass->change_state = GST_DEBUG_FUNCPTR (gst_lp_bin_change_state);
   gstelement_klass->query = GST_DEBUG_FUNCPTR (gst_lp_bin_query);
 
@@ -136,6 +147,7 @@ gst_lp_bin_init (GstLpBin * lpbin)
   lpbin->uridecodebin = NULL;
   lpbin->fcbin = NULL;
   lpbin->lpsink = NULL;
+  lpbin->source = NULL;
 
   lpbin->naudio = 0;
   lpbin->nvideo = 0;
@@ -151,6 +163,9 @@ gst_lp_bin_finalize (GObject * obj)
   GstLpBin *lpbin;
 
   lpbin = GST_LP_BIN (obj);
+
+  if(lpbin->source)
+      gst_object_unref (lpbin->source);
 
   g_rec_mutex_clear (&lpbin->lock);
 
@@ -209,6 +224,13 @@ gst_lp_bin_get_property (GObject * object, guint prop_id, GValue * value,
       g_value_set_string (value, lpbin->uri);
       GST_LP_BIN_UNLOCK (lpbin);
       break;
+    case PROP_SOURCE:
+    {
+      GST_OBJECT_LOCK (lpbin);
+      g_value_set_object (value, lpbin->source);
+      GST_OBJECT_UNLOCK (lpbin);
+      break;
+    }
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -268,6 +290,26 @@ no_more_pads_cb (GstElement * decodebin, GstLpBin * lpbin)
 	}
 }
 
+static void
+notify_source_cb (GstElement * decodebin, GParamSpec * pspec, GstLpBin * lpbin)
+{
+  GST_DEBUG_OBJECT (lpbin, "notify_source_cb");
+  GstElement *source;
+
+  g_object_get (lpbin->uridecodebin, "source", &source, NULL);
+
+  GST_OBJECT_LOCK (lpbin);
+  if ((lpbin->source != NULL) && (GST_IS_ELEMENT(lpbin->source)))
+  {
+    gst_object_unref ( GST_OBJECT(lpbin->source));
+  }
+  lpbin->source = source;
+  GST_OBJECT_UNLOCK (lpbin);
+
+  g_object_notify (G_OBJECT (lpbin), "source");
+  g_signal_emit (lpbin, gst_lp_bin_signals[SIGNAL_SOURCE_SETUP], 0, lpbin->source);
+}
+
 static gboolean
 gst_lp_bin_setup_element (GstLpBin * lpbin)
 {
@@ -282,6 +324,10 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
   lpbin->no_more_pads_id =
       g_signal_connect (lpbin->uridecodebin, "no-more-pads",
       G_CALLBACK (no_more_pads_cb), lpbin);
+
+  lpbin->source_element_id =
+      g_signal_connect (lpbin->uridecodebin, "notify::source",
+      G_CALLBACK (notify_source_cb), lpbin);
 
   gst_bin_add (GST_BIN_CAST (lpbin), lpbin->uridecodebin);
 
