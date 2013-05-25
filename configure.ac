@@ -131,6 +131,7 @@ Makefile
 gst/Makefile
 gst/compat/Makefile
 gst/playback/Makefile
+tests/Makefile
 )
 AC_OUTPUT
 

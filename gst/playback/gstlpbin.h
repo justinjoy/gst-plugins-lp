@@ -51,20 +51,30 @@ struct _GstLpBin
 
   gchar *uri;
   gulong pad_added_id;
+  gulong pad_removed_id;
   gulong no_more_pads_id;
   gulong source_element_id;
+  gulong drained_id;
+  gulong unknown_type_id;
 
   guint naudio;
   guint nvideo;
   guint ntext;
 
-	GstPad * video_pad;		/* contains srcpads of input-selectors for connect with lpsink*/
-	GstPad * audio_pad;
+  GstPad *video_pad;            /* contains srcpads of input-selectors for connect with lpsink */
+  GstPad *audio_pad;
+
+  GstElement *audio_sink;       /* configured audio sink, or NULL  */
+  GstElement *video_sink;       /* configured video sink, or NULL */
 };
 
 struct _GstLpBinClass
 {
   GstPipelineClass parent_class;
+
+  /* notify app that the current uri finished decoding and it is possible to
+   * queue a new one for gapless playback */
+  void (*about_to_finish) (GstLpBin * lpbin);
 };
 
 GType gst_lp_bin_get_type (void);

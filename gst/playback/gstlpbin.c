@@ -24,6 +24,7 @@
 #include <gst/gst.h>
 
 #include "gstlpbin.h"
+#include "gstlpsink.h"
 
 GST_DEBUG_CATEGORY_STATIC (gst_lp_bin_debug);
 #define GST_CAT_DEFAULT gst_lp_bin_debug
@@ -33,10 +34,13 @@ enum
   PROP_0,
   PROP_URI,
   PROP_SOURCE,
+  PROP_AUDIO_SINK,
+  PROP_VIDEO_SINK,
   PROP_LAST
 };
 enum
 {
+  SIGNAL_ABOUT_TO_FINISH,
   SIGNAL_SOURCE_SETUP,
   LAST_SIGNAL
 };
@@ -59,12 +63,21 @@ static gboolean gst_lp_bin_query (GstElement * element, GstQuery * query);
 static void no_more_pads_cb (GstElement * decodebin, GstLpBin * lpbin);
 static void pad_added_cb (GstElement * decodebin, GstPad * pad,
     GstLpBin * lpbin);
-static void notify_source_cb (GstElement * decodebin, GParamSpec * pspec, GstLpBin * lpbin);
+static void pad_removec_cb (GstElement * decodebin, GstPad * pad,
+    GstLpBin * lpbin);
+static void notify_source_cb (GstElement * decodebin, GParamSpec * pspec,
+    GstLpBin * lpbin);
+static void drained_cb (GstElement * decodebin, GstLpBin * lpbin);
+static void unknown_type_cb (GstElement * decodebin, GstPad * pad,
+    GstCaps * caps, GstLpBin * lpbin);
 
 /* private functions */
 static gboolean gst_lp_bin_setup_element (GstLpBin * lpbin);
 static gboolean gst_lp_bin_make_link (GstLpBin * lpbin);
-
+static void gst_lp_bin_set_sink (GstLpBin * lpbin, GstElement ** elem,
+    const gchar * dbg, GstElement * sink);
+static GstElement *gst_lp_bin_get_current_sink (GstLpBin * playbin,
+    GstElement ** elem, const gchar * dbg, GstLpSinkType type);
 
 static GstElementClass *parent_class;
 
@@ -127,11 +140,26 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
       g_param_spec_object ("source", "Source", "Source element",
           GST_TYPE_ELEMENT, G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
 
+  g_object_class_install_property (gobject_klass, PROP_VIDEO_SINK,
+      g_param_spec_object ("video-sink", "Video Sink",
+          "the video output element to use (NULL = default sink)",
+          GST_TYPE_ELEMENT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property (gobject_klass, PROP_AUDIO_SINK,
+      g_param_spec_object ("audio-sink", "Audio Sink",
+          "the audio output element to use (NULL = default sink)",
+          GST_TYPE_ELEMENT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  gst_lp_bin_signals[SIGNAL_ABOUT_TO_FINISH] =
+      g_signal_new ("about-to-finish", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST,
+      G_STRUCT_OFFSET (GstLpBinClass, about_to_finish), NULL, NULL,
+      g_cclosure_marshal_generic, G_TYPE_NONE, 0, G_TYPE_NONE);
+
   gst_lp_bin_signals[SIGNAL_SOURCE_SETUP] =
       g_signal_new ("source-setup", G_TYPE_FROM_CLASS (klass),
       G_SIGNAL_RUN_LAST, 0, NULL, NULL,
       g_cclosure_marshal_generic, G_TYPE_NONE, 1, GST_TYPE_ELEMENT);
-
   gstelement_klass->change_state = GST_DEBUG_FUNCPTR (gst_lp_bin_change_state);
   gstelement_klass->query = GST_DEBUG_FUNCPTR (gst_lp_bin_query);
 
@@ -153,8 +181,8 @@ gst_lp_bin_init (GstLpBin * lpbin)
   lpbin->nvideo = 0;
   lpbin->ntext = 0;
 
-	lpbin->video_pad = NULL;
-	lpbin->audio_pad = NULL;
+  lpbin->video_pad = NULL;
+  lpbin->audio_pad = NULL;
 }
 
 static void
@@ -164,9 +192,18 @@ gst_lp_bin_finalize (GObject * obj)
 
   lpbin = GST_LP_BIN (obj);
 
-  if(lpbin->source)
-      gst_object_unref (lpbin->source);
+  if (lpbin->source)
+    gst_object_unref (lpbin->source);
 
+  if (lpbin->video_sink) {
+    gst_element_set_state (lpbin->video_sink, GST_STATE_NULL);
+    gst_object_unref (lpbin->video_sink);
+  }
+
+  if (lpbin->audio_sink) {
+    gst_element_set_state (lpbin->audio_sink, GST_STATE_NULL);
+    gst_object_unref (lpbin->audio_sink);
+  }
   g_rec_mutex_clear (&lpbin->lock);
 
   G_OBJECT_CLASS (parent_class)->finalize (obj);
@@ -207,6 +244,14 @@ gst_lp_bin_set_property (GObject * object, guint prop_id,
     case PROP_URI:
       lpbin->uri = g_strdup (g_value_get_string (value));
       break;
+    case PROP_VIDEO_SINK:
+      gst_lp_bin_set_sink (lpbin, &lpbin->video_sink, "video",
+          g_value_get_object (value));
+      break;
+    case PROP_AUDIO_SINK:
+      gst_lp_bin_set_sink (lpbin, &lpbin->audio_sink, "audio",
+          g_value_get_object (value));
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
   }
@@ -231,6 +276,16 @@ gst_lp_bin_get_property (GObject * object, guint prop_id, GValue * value,
       GST_OBJECT_UNLOCK (lpbin);
       break;
     }
+    case PROP_VIDEO_SINK:
+      g_value_take_object (value,
+          gst_lp_bin_get_current_sink (lpbin, &lpbin->video_sink,
+              "video", GST_LP_SINK_TYPE_VIDEO));
+      break;
+    case PROP_AUDIO_SINK:
+      g_value_take_object (value,
+          gst_lp_bin_get_current_sink (lpbin, &lpbin->audio_sink,
+              "audio", GST_LP_SINK_TYPE_AUDIO));
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -243,51 +298,75 @@ pad_added_cb (GstElement * decodebin, GstPad * pad, GstLpBin * lpbin)
   GstCaps *caps;
   const GstStructure *s;
   const gchar *name;
-	GstPad *fcbin_sinkpad, *fcbin_srcpad;
-	GstPadTemplate *tmpl;
+  GstPad *fcbin_sinkpad, *fcbin_srcpad;
+  GstPadTemplate *tmpl;
 
 
   caps = gst_pad_query_caps (pad, NULL);
   s = gst_caps_get_structure (caps, 0);
   name = gst_structure_get_name (s);
 
-	tmpl = gst_pad_template_new (name, GST_PAD_SINK, GST_PAD_REQUEST, caps);
+  tmpl = gst_pad_template_new (name, GST_PAD_SINK, GST_PAD_REQUEST, caps);
 
   GST_DEBUG_OBJECT (lpbin,
       "pad %s:%s with caps %" GST_PTR_FORMAT " added",
       GST_DEBUG_PAD_NAME (pad), caps);
 
-	fcbin_sinkpad = gst_element_request_pad (lpbin->fcbin, tmpl, name, caps);
-	gst_pad_link (pad, fcbin_sinkpad);
+  fcbin_sinkpad = gst_element_request_pad (lpbin->fcbin, tmpl, name, caps);
+  gst_pad_link (pad, fcbin_sinkpad);
 
-	fcbin_srcpad = g_object_get_data (G_OBJECT (fcbin_sinkpad), "fcbin.srcpad");
+  fcbin_srcpad = g_object_get_data (G_OBJECT (fcbin_sinkpad), "fcbin.srcpad");
 
   if (!lpbin->video_pad && g_str_has_prefix (name, "video/")) {
-		lpbin->video_pad = fcbin_srcpad;
+    lpbin->video_pad = fcbin_srcpad;
   } else if (!lpbin->audio_pad && g_str_has_prefix (name, "audio/")) {
-		lpbin->audio_pad = fcbin_srcpad;
+    lpbin->audio_pad = fcbin_srcpad;
   }
 
-	g_object_unref (tmpl);
+  g_object_unref (tmpl);
 
+}
+
+/* called when a pad is removed from the uridecodebin. We unlink the pad from
+ * the selector. This will make the selector select a new pad. */
+static void
+pad_removed_cb (GstElement * decodebin, GstPad * pad, GstLpBin * lpbin)
+{
+  GST_DEBUG_OBJECT (lpbin, "pad removed callback");
+  // TOTO
 }
 
 static void
 no_more_pads_cb (GstElement * decodebin, GstLpBin * lpbin)
 {
-	GstPad * lpsink_sinkpad;
-
   GST_DEBUG_OBJECT (lpbin, "no more pads callback");
+  GstPad *lpsink_sinkpad;
 
-	if (lpbin->video_pad) {
-		lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, "video_sink");
-		gst_pad_link (lpbin->video_pad, lpsink_sinkpad);
-	}
+  GST_OBJECT_LOCK (lpbin);
+  if (lpbin->audio_sink) {
+    GST_DEBUG_OBJECT (lpbin, "setting custom audio sink %" GST_PTR_FORMAT,
+        lpbin->audio_sink);
+    gst_lp_sink_set_sink (lpbin->lpsink, GST_LP_SINK_TYPE_AUDIO,
+        lpbin->audio_sink);
+  }
 
-	if (lpbin->audio_pad) {
-		lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, "audio_sink");
-		gst_pad_link (lpbin->audio_pad, lpsink_sinkpad);
-	}
+  if (lpbin->video_sink) {
+    GST_DEBUG_OBJECT (lpbin, "setting custom video sink %" GST_PTR_FORMAT,
+        lpbin->video_sink);
+    gst_lp_sink_set_sink (lpbin->lpsink, GST_LP_SINK_TYPE_VIDEO,
+        lpbin->video_sink);
+  }
+  GST_OBJECT_UNLOCK (lpbin);
+
+  if (lpbin->video_pad) {
+    lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, "video_sink");
+    gst_pad_link (lpbin->video_pad, lpsink_sinkpad);
+  }
+
+  if (lpbin->audio_pad) {
+    lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, "audio_sink");
+    gst_pad_link (lpbin->audio_pad, lpsink_sinkpad);
+  }
 }
 
 static void
@@ -299,15 +378,36 @@ notify_source_cb (GstElement * decodebin, GParamSpec * pspec, GstLpBin * lpbin)
   g_object_get (lpbin->uridecodebin, "source", &source, NULL);
 
   GST_OBJECT_LOCK (lpbin);
-  if ((lpbin->source != NULL) && (GST_IS_ELEMENT(lpbin->source)))
-  {
-    gst_object_unref ( GST_OBJECT(lpbin->source));
+  if ((lpbin->source != NULL) && (GST_IS_ELEMENT (lpbin->source))) {
+    gst_object_unref (GST_OBJECT (lpbin->source));
   }
   lpbin->source = source;
   GST_OBJECT_UNLOCK (lpbin);
 
   g_object_notify (G_OBJECT (lpbin), "source");
-  g_signal_emit (lpbin, gst_lp_bin_signals[SIGNAL_SOURCE_SETUP], 0, lpbin->source);
+  g_signal_emit (lpbin, gst_lp_bin_signals[SIGNAL_SOURCE_SETUP], 0,
+      lpbin->source);
+}
+
+static void
+drained_cb (GstElement * decodebin, GstLpBin * lpbin)
+{
+  GST_DEBUG_OBJECT (lpbin, "drained cb");
+
+  /* after this call, we should have a next group to activate or we EOS */
+  g_signal_emit (G_OBJECT (lpbin),
+      gst_lp_bin_signals[SIGNAL_ABOUT_TO_FINISH], 0, NULL);
+
+  // TO DO
+}
+
+static void
+unknown_type_cb (GstElement * decodebin, GstPad * pad, GstCaps * caps,
+    GstLpBin * lpbin)
+{
+  GST_DEBUG_OBJECT (lpbin, "unknown type cb");
+
+  // DO DO
 }
 
 static gboolean
@@ -325,10 +425,21 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
       g_signal_connect (lpbin->uridecodebin, "no-more-pads",
       G_CALLBACK (no_more_pads_cb), lpbin);
 
+  lpbin->pad_removed_id = g_signal_connect (lpbin->uridecodebin, "pad-removed",
+      G_CALLBACK (pad_removed_cb), lpbin);
+
   lpbin->source_element_id =
       g_signal_connect (lpbin->uridecodebin, "notify::source",
       G_CALLBACK (notify_source_cb), lpbin);
 
+  /* is called when the uridecodebin is out of data and we can switch to the
+   * next uri */
+  lpbin->drained_id = g_signal_connect (lpbin->uridecodebin, "drained",
+      G_CALLBACK (drained_cb), lpbin);
+
+  lpbin->unknown_type_id =
+      g_signal_connect (lpbin->uridecodebin, "unknown-type",
+      G_CALLBACK (unknown_type_cb), lpbin);
   gst_bin_add (GST_BIN_CAST (lpbin), lpbin->uridecodebin);
 
   lpbin->fcbin = gst_element_factory_make ("fcbin", NULL);
@@ -336,8 +447,8 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
 
   lpbin->lpsink = gst_element_factory_make ("lpsink", NULL);
   gst_bin_add (GST_BIN_CAST (lpbin), lpbin->lpsink);
-  
-	g_object_unref (fd_caps);
+
+  g_object_unref (fd_caps);
 
   return TRUE;
 }
@@ -375,6 +486,18 @@ gst_lp_bin_change_state (GstElement * element, GstStateChange transition)
   if (ret == GST_STATE_CHANGE_FAILURE)
     goto failure;
 
+  switch (transition) {
+    case GST_STATE_CHANGE_READY_TO_NULL:
+    {
+      if (lpbin->audio_sink)
+        gst_element_set_state (lpbin->audio_sink, GST_STATE_NULL);
+      if (lpbin->video_sink)
+        gst_element_set_state (lpbin->video_sink, GST_STATE_NULL);
+      break;
+    }
+    default:
+      break;
+  }
   return ret;
 
   /* ERRORS */
@@ -383,4 +506,45 @@ failure:
     return ret;
   }
 
+}
+
+static void
+gst_lp_bin_set_sink (GstLpBin * lpbin, GstElement ** elem, const gchar * dbg,
+    GstElement * sink)
+{
+  GST_DEBUG_OBJECT (lpbin, "Setting %s sink to %" GST_PTR_FORMAT, dbg, sink);
+
+  GST_OBJECT_LOCK (lpbin);
+  if (*elem != sink) {
+    GstElement *old;
+
+    old = *elem;
+    if (sink)
+      gst_object_ref_sink (sink);
+    *elem = sink;
+    if (old)
+      gst_object_unref (old);
+  }
+  GST_DEBUG_OBJECT (lpbin, "%s sink now %" GST_PTR_FORMAT, dbg, *elem);
+  GST_OBJECT_UNLOCK (lpbin);
+}
+
+static GstElement *
+gst_lp_bin_get_current_sink (GstLpBin * lpbin, GstElement ** elem,
+    const gchar * dbg, GstLpSinkType type)
+{
+  GstElement *sink = gst_lp_sink_get_sink (lpbin->lpsink, type);
+
+  GST_LOG_OBJECT (lpbin, "play_sink_get_sink() returned %s sink %"
+      GST_PTR_FORMAT ", the originally set %s sink is %" GST_PTR_FORMAT,
+      dbg, sink, dbg, *elem);
+
+  if (sink == NULL) {
+    GST_OBJECT_LOCK (lpbin);
+    if ((sink = *elem))
+      gst_object_ref (sink);
+    GST_OBJECT_UNLOCK (lpbin);
+  }
+
+  return sink;
 }

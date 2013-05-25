@@ -44,6 +44,14 @@ GST_STATIC_PAD_TEMPLATE ("text_sink_%u",
     GST_PAD_REQUEST,
     GST_STATIC_CAPS_ANY);
 
+/* props */
+enum
+{
+  PROP_0,
+  PROP_VIDEO_SINK,
+  PROP_AUDIO_SINK,
+  PROP_LAST
+};
 static void gst_lp_sink_dispose (GObject * object);
 static void gst_lp_sink_finalize (GObject * object);
 static void gst_lp_sink_set_property (GObject * object, guint prop_id,
@@ -63,6 +71,9 @@ static GstStateChangeReturn gst_lp_sink_change_state (GstElement * element,
 
 static void gst_lp_sink_handle_message (GstBin * bin, GstMessage * message);
 
+void gst_lp_sink_set_sink (GstLpSink * lpsink, GstLpSinkType type,
+    GstElement * sink);
+GstElement *gst_lp_sink_get_sink (GstLpSink * lpsink, GstLpSinkType type);
 
 static void
 _do_init (GType type)
@@ -90,6 +101,32 @@ gst_lp_sink_class_init (GstLpSinkClass * klass)
   gobject_klass->finalize = gst_lp_sink_finalize;
   gobject_klass->set_property = gst_lp_sink_set_property;
   gobject_klass->get_property = gst_lp_sink_get_property;
+
+  /**
+   * GstPlaySink:video-sink:
+   *
+   * Set the used video sink element. NULL will use the default sink. playsink
+   * must be in %GST_STATE_NULL
+   *
+   * Since: 0.10.36
+   */
+  g_object_class_install_property (gobject_klass, PROP_VIDEO_SINK,
+      g_param_spec_object ("video-sink", "Video Sink",
+          "the video output element to use (NULL = default sink)",
+          GST_TYPE_ELEMENT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  /**
+   * GstPlaySink:audio-sink:
+   *
+   * Set the used audio sink element. NULL will use the default sink. playsink
+   * must be in %GST_STATE_NULL
+   *
+   * Since: 0.10.36
+   */
+  g_object_class_install_property (gobject_klass, PROP_AUDIO_SINK,
+      g_param_spec_object ("audio-sink", "Audio Sink",
+          "the audio output element to use (NULL = default sink)",
+          GST_TYPE_ELEMENT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   gst_element_class_add_pad_template (gstelement_klass,
       gst_static_pad_template_get (&audiotemplate));
@@ -130,8 +167,20 @@ gst_lp_sink_init (GstLpSink * lpsink)
 static void
 gst_lp_sink_dispose (GObject * obj)
 {
-//  GstLpSink *lpsink;
-//  lpsink = GST_LP_SINK(obj);
+  GstLpSink *lpsink;
+  lpsink = GST_LP_SINK (obj);
+
+  if (lpsink->audio_sink != NULL) {
+    gst_element_set_state (lpsink->audio_sink, GST_STATE_NULL);
+    gst_object_unref (lpsink->audio_sink);
+    lpsink->audio_sink = NULL;
+  }
+
+  if (lpsink->video_sink != NULL) {
+    gst_element_set_state (lpsink->video_sink, GST_STATE_NULL);
+    gst_object_unref (lpsink->video_sink);
+    lpsink->video_sink = NULL;
+  }
 
   G_OBJECT_CLASS (parent_class)->dispose (obj);
 }
@@ -205,7 +254,7 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
     goto beach;
   }
 
-  gst_bin_add (GST_BIN_CAST(lpsink), sink_element);
+  gst_bin_add (GST_BIN_CAST (lpsink), sink_element);
   gst_element_set_state (sink_element, GST_STATE_PAUSED);
   res = gst_ghost_pad_new_no_target (pad_name, GST_PAD_SINK);
 
@@ -305,9 +354,17 @@ static void
 gst_lp_sink_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * spec)
 {
-//  GstLpSink *lpsink = GST_LP_SINK (object);
+  GstLpSink *lpsink = GST_LP_SINK (object);
 
   switch (prop_id) {
+    case PROP_VIDEO_SINK:
+      gst_lp_sink_set_sink (lpsink, GST_LP_SINK_TYPE_VIDEO,
+          g_value_get_object (value));
+      break;
+    case PROP_AUDIO_SINK:
+      gst_lp_sink_set_sink (lpsink, GST_LP_SINK_TYPE_AUDIO,
+          g_value_get_object (value));
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, spec);
       break;
@@ -318,8 +375,16 @@ static void
 gst_lp_sink_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * spec)
 {
-//  GstLpSink *lpsink = GST_LP_SINK (object);
+  GstLpSink *lpsink = GST_LP_SINK (object);
   switch (prop_id) {
+    case PROP_VIDEO_SINK:
+      g_value_take_object (value, gst_lp_sink_get_sink (lpsink,
+              GST_LP_SINK_TYPE_VIDEO));
+      break;
+    case PROP_AUDIO_SINK:
+      g_value_take_object (value, gst_lp_sink_get_sink (lpsink,
+              GST_LP_SINK_TYPE_AUDIO));
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, spec);
       break;
@@ -380,6 +445,8 @@ gst_lp_sink_change_state (GstElement * element, GstStateChange transition)
 {
   GstStateChangeReturn ret;
   GstStateChangeReturn bret;
+  GstLpSink *lpsink;
+  lpsink = GST_LP_SINK (element);
 
   switch (transition) {
     default:
@@ -415,6 +482,12 @@ gst_lp_sink_change_state (GstElement * element, GstStateChange transition)
   switch (transition) {
     case GST_STATE_CHANGE_READY_TO_PAUSED:
       break;
+    case GST_STATE_CHANGE_READY_TO_NULL:
+      if (lpsink->audio_sink != NULL)
+        gst_element_set_state (lpsink->audio_sink, GST_STATE_NULL);
+      if (lpsink->video_sink != NULL)
+        gst_element_set_state (lpsink->video_sink, GST_STATE_NULL);
+      break;
     default:
       break;
   }
@@ -426,4 +499,64 @@ activate_failed:
         "element failed to change states -- activation problem?");
     return GST_STATE_CHANGE_FAILURE;
   }
+}
+
+void
+gst_lp_sink_set_sink (GstLpSink * lpsink, GstLpSinkType type, GstElement * sink)
+{
+  GstElement **elem = NULL, *old = NULL;
+
+  GST_DEBUG_OBJECT (lpsink, "Setting sink %" GST_PTR_FORMAT " as sink type %d",
+      sink, type);
+
+  GST_LP_SINK_LOCK (lpsink);
+  switch (type) {
+    case GST_LP_SINK_TYPE_AUDIO:
+      elem = &lpsink->audio_sink;
+      break;
+    case GST_LP_SINK_TYPE_VIDEO:
+      elem = &lpsink->video_sink;
+      break;
+    default:
+      break;
+  }
+
+  if (elem) {
+    old = *elem;
+    if (sink)
+      gst_object_ref (sink);
+    *elem = sink;
+  }
+  GST_LP_SINK_UNLOCK (lpsink);
+
+  if (old) {
+    if (old != sink)
+      gst_element_set_state (old, GST_STATE_NULL);
+    gst_object_unref (old);
+  }
+}
+
+GstElement *
+gst_lp_sink_get_sink (GstLpSink * lpsink, GstLpSinkType type)
+{
+  GstElement *result = NULL;
+  GstElement *elem = NULL;
+
+  GST_LP_SINK_LOCK (lpsink);
+  switch (type) {
+    case GST_LP_SINK_TYPE_AUDIO:
+      elem = lpsink->audio_sink;
+      break;
+    case GST_LP_SINK_TYPE_VIDEO:
+      elem = lpsink->video_sink;
+      break;
+    default:
+      break;
+  }
+
+  if (elem)
+    result = gst_object_ref (elem);
+  GST_LP_SINK_UNLOCK (lpsink);
+
+  return result;
 }

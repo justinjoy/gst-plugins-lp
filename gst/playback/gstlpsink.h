@@ -67,5 +67,9 @@ typedef enum
 
 GType gst_lp_sink_get_type (void);
 
+void gst_lp_sink_set_sink (GstLpSink * lpsink, GstLpSinkType type,
+    GstElement * sink);
+GstElement *gst_lp_sink_get_sink (GstLpSink * lpsink, GstLpSinkType type);
+
 G_END_DECLS
 #endif // __GST_LP_SINK_H__
