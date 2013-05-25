@@ -183,7 +183,7 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
 
   switch (type) {
     case GST_LP_SINK_TYPE_AUDIO:
-      sink_name = "adecsink";
+      sink_name = "fakesink";
       pad_name = "audio_sink";
 
       break;
@@ -205,7 +205,7 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
     goto beach;
   }
 
-  gst_bin_add (GST_BIN_CAST (lpsink), sink_element);
+  gst_bin_add (GST_BIN_CAST(lpsink), sink_element);
   gst_element_set_state (sink_element, GST_STATE_PAUSED);
   res = gst_ghost_pad_new_no_target (pad_name, GST_PAD_SINK);
 
