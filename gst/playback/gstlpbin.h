@@ -45,16 +45,21 @@ struct _GstLpBin
   GstElement *uridecodebin;
   GstElement *fcbin;
   GstElement *lpsink;
+  /* the last activated source */
+  GstElement *source;
   GstFlowReturn ret;
 
   gchar *uri;
   gulong pad_added_id;
   gulong no_more_pads_id;
+  gulong source_element_id;
 
   guint naudio;
   guint nvideo;
   guint ntext;
 
+	GstPad * video_pad;		/* contains srcpads of input-selectors for connect with lpsink*/
+	GstPad * audio_pad;
 };
 
 struct _GstLpBinClass
