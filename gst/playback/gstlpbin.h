@@ -30,6 +30,7 @@ G_BEGIN_DECLS
 #define GST_LP_BIN_CLASS(klass) (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_LP_BIN,GstLpBinClass))
 #define GST_IS_LP_BIN(obj) (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_LP_BIN))
 #define GST_IS_LP_BIN_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_LP_BIN))
+#define GST_LP_BIN_CAST(obj) ((GstLpBin *)(obj))
 #define GST_LP_BIN_GET_LOCK(bin) (&((GstLpBin*)(bin))->lock)
 #define GST_LP_BIN_LOCK(bin) (g_rec_mutex_lock (GST_LP_BIN_GET_LOCK(bin)))
 #define GST_LP_BIN_UNLOCK(bin) (g_rec_mutex_unlock (GST_LP_BIN_GET_LOCK(bin)))
@@ -56,6 +57,8 @@ struct _GstLpBin
   gulong source_element_id;
   gulong drained_id;
   gulong unknown_type_id;
+  gulong autoplug_factories_id;
+  gulong autoplug_continue_id;
 
   guint naudio;
   guint nvideo;
@@ -66,6 +69,10 @@ struct _GstLpBin
 
   GstElement *audio_sink;       /* configured audio sink, or NULL  */
   GstElement *video_sink;       /* configured video sink, or NULL */
+
+  GMutex elements_lock;
+  guint32 elements_cookie;
+  GList *elements;              /* factories we can use for selecting elements */
 };
 
 struct _GstLpBinClass
@@ -75,6 +82,14 @@ struct _GstLpBinClass
   /* notify app that the current uri finished decoding and it is possible to
    * queue a new one for gapless playback */
   void (*about_to_finish) (GstLpBin * lpbin);
+
+  /* signal fired to know if we continue trying to decode the given caps */
+    gboolean (*autoplug_continue) (GstElement * element, GstPad * pad,
+      GstCaps * caps);
+
+  /* signal fired to get a list of factories to try to autoplug */
+  GValueArray *(*autoplug_factories) (GstElement * element, GstPad * pad,
+      GstCaps * caps);
 };
 
 GType gst_lp_bin_get_type (void);

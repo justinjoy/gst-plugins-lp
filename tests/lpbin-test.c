@@ -48,13 +48,13 @@ main (gint argc, gchar * argv[])
   gst_init (&argc, &argv);
 
   if (argc < 2) {
-    g_print ("usage: %s <media file or uri>\n", argv[0]);
+    GST_ERROR ("usage: %s <media file or uri>\n", argv[0]);
     return 1;
   }
 
   lpbin = gst_element_factory_make ("lpbin", NULL);
   if (!lpbin) {
-    g_print ("lpbin plugin missing\n");
+    GST_ERROR ("lpbin plugin missing\n");
     return 1;
   }
 

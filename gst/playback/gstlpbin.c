@@ -42,6 +42,8 @@ enum
 {
   SIGNAL_ABOUT_TO_FINISH,
   SIGNAL_SOURCE_SETUP,
+  SIGNAL_AUTOPLUG_CONTINUE,
+  SIGNAL_AUTOPLUG_FACTORIES,
   LAST_SIGNAL
 };
 
@@ -70,6 +72,10 @@ static void notify_source_cb (GstElement * decodebin, GParamSpec * pspec,
 static void drained_cb (GstElement * decodebin, GstLpBin * lpbin);
 static void unknown_type_cb (GstElement * decodebin, GstPad * pad,
     GstCaps * caps, GstLpBin * lpbin);
+static gboolean autoplug_continue_signal (GstElement * element, GstPad * pad,
+    GstCaps * caps, GstLpBin * lpbin);
+static GValueArray *autoplug_factories_signal (GstElement * decodebin,
+    GstPad * pad, GstCaps * caps, GstLpBin * lpbin);
 
 /* private functions */
 static gboolean gst_lp_bin_setup_element (GstLpBin * lpbin);
@@ -78,6 +84,19 @@ static void gst_lp_bin_set_sink (GstLpBin * lpbin, GstElement ** elem,
     const gchar * dbg, GstElement * sink);
 static GstElement *gst_lp_bin_get_current_sink (GstLpBin * playbin,
     GstElement ** elem, const gchar * dbg, GstLpSinkType type);
+static gint compare_factories_func (gconstpointer p1, gconstpointer p2);
+static void gst_lp_bin_update_elements_list (GstLpBin * lpbin);
+static gboolean _factory_can_sink_caps (GstElementFactory * factory,
+    GstCaps * caps);
+static gboolean sink_accepts_caps (GstElement * sink, GstCaps * caps);
+static gboolean _gst_boolean_accumulator (GSignalInvocationHint * ihint,
+    GValue * return_accu, const GValue * handler_return, gpointer dummy);
+static gboolean _gst_array_accumulator (GSignalInvocationHint * ihint,
+    GValue * return_accu, const GValue * handler_return, gpointer dummy);
+static gboolean gst_lp_bin_autoplug_continue (GstElement * element,
+    GstPad * pad, GstCaps * caps);
+static GValueArray *gst_lp_bin_autoplug_factories (GstElement * element,
+    GstPad * pad, GstCaps * caps);
 
 static GstElementClass *parent_class;
 
@@ -163,7 +182,24 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
   gstelement_klass->change_state = GST_DEBUG_FUNCPTR (gst_lp_bin_change_state);
   gstelement_klass->query = GST_DEBUG_FUNCPTR (gst_lp_bin_query);
 
+  gst_lp_bin_signals[SIGNAL_AUTOPLUG_CONTINUE] =
+      g_signal_new ("autoplug-continue", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST, G_STRUCT_OFFSET (GstLpBinClass,
+          autoplug_continue), _gst_boolean_accumulator, NULL,
+      g_cclosure_marshal_generic, G_TYPE_BOOLEAN, 2, GST_TYPE_PAD,
+      GST_TYPE_CAPS);
+
+  gst_lp_bin_signals[SIGNAL_AUTOPLUG_FACTORIES] =
+      g_signal_new ("autoplug-factories", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST, G_STRUCT_OFFSET (GstLpBinClass,
+          autoplug_factories), _gst_array_accumulator, NULL,
+      g_cclosure_marshal_generic, G_TYPE_VALUE_ARRAY, 2,
+      GST_TYPE_PAD, GST_TYPE_CAPS);
+
   gstbin_klass->handle_message = GST_DEBUG_FUNCPTR (gst_lp_bin_handle_message);
+
+  klass->autoplug_continue = GST_DEBUG_FUNCPTR (gst_lp_bin_autoplug_continue);
+  klass->autoplug_factories = GST_DEBUG_FUNCPTR (gst_lp_bin_autoplug_factories);
 }
 
 static void
@@ -172,6 +208,10 @@ gst_lp_bin_init (GstLpBin * lpbin)
   GST_DEBUG_CATEGORY_INIT (gst_lp_bin_debug, "lpbin", 0,
       "Lightweight Play Bin");
   g_rec_mutex_init (&lpbin->lock);
+
+  /* first filter out the interesting element factories */
+  g_mutex_init (&lpbin->elements_lock);
+
   lpbin->uridecodebin = NULL;
   lpbin->fcbin = NULL;
   lpbin->lpsink = NULL;
@@ -204,7 +244,9 @@ gst_lp_bin_finalize (GObject * obj)
     gst_element_set_state (lpbin->audio_sink, GST_STATE_NULL);
     gst_object_unref (lpbin->audio_sink);
   }
+
   g_rec_mutex_clear (&lpbin->lock);
+  g_mutex_clear (&lpbin->elements_lock);
 
   G_OBJECT_CLASS (parent_class)->finalize (obj);
 }
@@ -333,7 +375,7 @@ static void
 pad_removed_cb (GstElement * decodebin, GstPad * pad, GstLpBin * lpbin)
 {
   GST_DEBUG_OBJECT (lpbin, "pad removed callback");
-  // TOTO
+  // TODO
 }
 
 static void
@@ -398,7 +440,7 @@ drained_cb (GstElement * decodebin, GstLpBin * lpbin)
   g_signal_emit (G_OBJECT (lpbin),
       gst_lp_bin_signals[SIGNAL_ABOUT_TO_FINISH], 0, NULL);
 
-  // TO DO
+  // TODO
 }
 
 static void
@@ -407,7 +449,7 @@ unknown_type_cb (GstElement * decodebin, GstPad * pad, GstCaps * caps,
 {
   GST_DEBUG_OBJECT (lpbin, "unknown type cb");
 
-  // DO DO
+  // TODO
 }
 
 static gboolean
@@ -441,6 +483,16 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
       g_signal_connect (lpbin->uridecodebin, "unknown-type",
       G_CALLBACK (unknown_type_cb), lpbin);
   gst_bin_add (GST_BIN_CAST (lpbin), lpbin->uridecodebin);
+
+  /* will be called when a new media type is found. We return a list of decoders
+   * including sinks for decodebin to try */
+  lpbin->autoplug_factories_id =
+      g_signal_connect (lpbin->uridecodebin, "autoplug-factories",
+      G_CALLBACK (autoplug_factories_signal), lpbin);
+
+  lpbin->autoplug_continue_id =
+      g_signal_connect (lpbin->uridecodebin, "autoplug-continue",
+      G_CALLBACK (autoplug_continue_signal), lpbin);
 
   lpbin->fcbin = gst_element_factory_make ("fcbin", NULL);
   gst_bin_add (GST_BIN_CAST (lpbin), lpbin->fcbin);
@@ -547,4 +599,331 @@ gst_lp_bin_get_current_sink (GstLpBin * lpbin, GstElement ** elem,
   }
 
   return sink;
+}
+
+static gboolean
+autoplug_continue_signal (GstElement * element, GstPad * pad, GstCaps * caps,
+    GstLpBin * lpbin)
+{
+  GST_LOG_OBJECT (lpbin, "autoplug_continue_notify");
+
+  gboolean result;
+
+  g_signal_emit (lpbin,
+      gst_lp_bin_signals[SIGNAL_AUTOPLUG_CONTINUE], 0, pad, caps, &result);
+
+  GST_LOG_OBJECT (lpbin, "autoplug_continue_notify, result = %d", result);
+
+  return result;
+}
+
+static gint
+compare_factories_func (gconstpointer p1, gconstpointer p2)
+{
+  GstPluginFeature *f1, *f2;
+  gint diff;
+  gboolean is_sink1, is_sink2;
+  gboolean is_parser1, is_parser2;
+
+  f1 = (GstPluginFeature *) p1;
+  f2 = (GstPluginFeature *) p2;
+
+  is_sink1 = gst_element_factory_list_is_type (GST_ELEMENT_FACTORY_CAST (f1),
+      GST_ELEMENT_FACTORY_TYPE_SINK);
+  is_sink2 = gst_element_factory_list_is_type (GST_ELEMENT_FACTORY_CAST (f2),
+      GST_ELEMENT_FACTORY_TYPE_SINK);
+  is_parser1 = gst_element_factory_list_is_type (GST_ELEMENT_FACTORY_CAST (f1),
+      GST_ELEMENT_FACTORY_TYPE_PARSER);
+  is_parser2 = gst_element_factory_list_is_type (GST_ELEMENT_FACTORY_CAST (f2),
+      GST_ELEMENT_FACTORY_TYPE_PARSER);
+
+  /* First we want all sinks as we prefer a sink if it directly
+   * supports the current caps */
+  if (is_sink1 && !is_sink2)
+    return -1;
+  else if (!is_sink1 && is_sink2)
+    return 1;
+
+  /* Then we want all parsers as we always want to plug parsers
+   * before decoders */
+  if (is_parser1 && !is_parser2)
+    return -1;
+  else if (!is_parser1 && is_parser2)
+    return 1;
+
+  /* And if it's a both a parser or sink we first sort by rank
+   * and then by factory name */
+  diff = gst_plugin_feature_get_rank (f2) - gst_plugin_feature_get_rank (f1);
+  if (diff != 0)
+    return diff;
+
+  diff = strcmp (GST_OBJECT_NAME (f2), GST_OBJECT_NAME (f1));
+
+  return diff;
+}
+
+/* Must be called with elements lock! */
+static void
+gst_lp_bin_update_elements_list (GstLpBin * lpbin)
+{
+  GList *res, *tmp;
+  guint cookie;
+
+  cookie = gst_registry_get_feature_list_cookie (gst_registry_get ());
+  if (!lpbin->elements || lpbin->elements_cookie != cookie) {
+    if (lpbin->elements)
+      gst_plugin_feature_list_free (lpbin->elements);
+    res =
+        gst_element_factory_list_get_elements
+        (GST_ELEMENT_FACTORY_TYPE_DECODABLE, GST_RANK_MARGINAL);
+    tmp =
+        gst_element_factory_list_get_elements
+        (GST_ELEMENT_FACTORY_TYPE_AUDIOVIDEO_SINKS, GST_RANK_MARGINAL);
+    lpbin->elements = g_list_concat (res, tmp);
+    lpbin->elements = g_list_sort (lpbin->elements, compare_factories_func);
+    lpbin->elements_cookie = cookie;
+  }
+}
+
+/* Like gst_element_factory_can_sink_any_caps() but doesn't
+ * allow ANY caps on the sinkpad template */
+static gboolean
+_factory_can_sink_caps (GstElementFactory * factory, GstCaps * caps)
+{
+  const GList *templs;
+
+  templs = gst_element_factory_get_static_pad_templates (factory);
+
+  while (templs) {
+    GstStaticPadTemplate *templ = (GstStaticPadTemplate *) templs->data;
+
+    if (templ->direction == GST_PAD_SINK) {
+      GstCaps *templcaps = gst_static_caps_get (&templ->static_caps);
+
+      if (!gst_caps_is_any (templcaps)
+          && gst_caps_can_intersect (templcaps, caps)) {
+        gst_caps_unref (templcaps);
+        return TRUE;
+      }
+      gst_caps_unref (templcaps);
+    }
+    templs = g_list_next (templs);
+  }
+
+  return FALSE;
+}
+
+static GValueArray *
+autoplug_factories_signal (GstElement * decodebin, GstPad * pad,
+    GstCaps * caps, GstLpBin * lpbin)
+{
+  GST_LOG_OBJECT (lpbin, "autoplug_factories_notify");
+
+  GValueArray *result;
+
+  g_signal_emit (lpbin, gst_lp_bin_signals[SIGNAL_AUTOPLUG_FACTORIES], 0, pad,
+      caps, &result);
+
+  GST_LOG_OBJECT (lpbin, "autoplug_factories_notify, result = %p", result);
+
+  return result;
+}
+
+static gboolean
+sink_accepts_caps (GstElement * sink, GstCaps * caps)
+{
+  GstPad *sinkpad;
+
+  /* ... activate it ... We do this before adding it to the bin so that we
+   * don't accidentally make it post error messages that will stop
+   * everything. */
+  if (GST_STATE (sink) < GST_STATE_READY &&
+      gst_element_set_state (sink,
+          GST_STATE_READY) == GST_STATE_CHANGE_FAILURE) {
+    return FALSE;
+  }
+
+  if ((sinkpad = gst_element_get_static_pad (sink, "sink"))) {
+    /* Got the sink pad, now let's see if the element actually does accept the
+     * caps that we have */
+    if (!gst_pad_query_accept_caps (sinkpad, caps)) {
+      gst_object_unref (sinkpad);
+      return FALSE;
+    }
+    gst_object_unref (sinkpad);
+  }
+
+  return TRUE;
+}
+
+static gboolean
+_gst_boolean_accumulator (GSignalInvocationHint * ihint,
+    GValue * return_accu, const GValue * handler_return, gpointer dummy)
+{
+  gboolean myboolean;
+
+  myboolean = g_value_get_boolean (handler_return);
+  if (!(ihint->run_type & G_SIGNAL_RUN_CLEANUP))
+    g_value_set_boolean (return_accu, myboolean);
+
+  /* stop emission if FALSE */
+  return myboolean;
+}
+
+static gboolean
+_gst_array_accumulator (GSignalInvocationHint * ihint,
+    GValue * return_accu, const GValue * handler_return, gpointer dummy)
+{
+  gpointer array;
+
+  array = g_value_get_boxed (handler_return);
+  if (!(ihint->run_type & G_SIGNAL_RUN_CLEANUP))
+    g_value_set_boxed (return_accu, array);
+
+  return FALSE;
+}
+
+static gboolean
+gst_lp_bin_autoplug_continue (GstElement * element, GstPad * pad,
+    GstCaps * caps)
+{
+  gboolean ret = TRUE;
+  GstElement *sink;
+  GstPad *sinkpad = NULL;
+  GstLpBin *lpbin = GST_LP_BIN_CAST (element);
+  GST_LOG_OBJECT (lpbin, "gst_lp_bin_autoplug_continue");
+
+  GST_OBJECT_LOCK (lpbin);
+
+  if ((sink = lpbin->audio_sink)) {
+    sinkpad = gst_element_get_static_pad (sink, "sink");
+    if (sinkpad) {
+      GstCaps *sinkcaps;
+
+      /* Ignore errors here, if a custom sink fails to go
+       * to READY things are wrong and will error out later
+       */
+      if (GST_STATE (sink) < GST_STATE_READY)
+        gst_element_set_state (sink, GST_STATE_READY);
+
+      sinkcaps = gst_pad_query_caps (sinkpad, NULL);
+      if (!gst_caps_is_any (sinkcaps))
+        ret = !gst_pad_query_accept_caps (sinkpad, caps);
+      gst_caps_unref (sinkcaps);
+      gst_object_unref (sinkpad);
+    }
+  }
+  if (!ret)
+    goto done;
+
+  if ((sink = lpbin->video_sink)) {
+    sinkpad = gst_element_get_static_pad (sink, "sink");
+    if (sinkpad) {
+      GstCaps *sinkcaps;
+
+      /* Ignore errors here, if a custom sink fails to go
+       * to READY things are wrong and will error out later
+       */
+      if (GST_STATE (sink) < GST_STATE_READY)
+        gst_element_set_state (sink, GST_STATE_READY);
+
+      sinkcaps = gst_pad_query_caps (sinkpad, NULL);
+      if (!gst_caps_is_any (sinkcaps))
+        ret = !gst_pad_query_accept_caps (sinkpad, caps);
+      gst_caps_unref (sinkcaps);
+      gst_object_unref (sinkpad);
+    }
+  }
+
+done:
+  GST_OBJECT_UNLOCK (lpbin);
+
+  GST_LOG_OBJECT (lpbin,
+      "continue autoplugging lpbin %p for %s:%s, %" GST_PTR_FORMAT ": %d",
+      lpbin, GST_DEBUG_PAD_NAME (pad), caps, ret);
+
+  return ret;
+}
+
+static GValueArray *
+gst_lp_bin_autoplug_factories (GstElement * element, GstPad * pad,
+    GstCaps * caps)
+{
+  GList *mylist, *tmp;
+  GValueArray *result;
+  GstLpBin *lpbin = GST_LP_BIN_CAST (element);
+
+  GST_LOG_OBJECT (lpbin, "factories lpbin %p for %s:%s, %" GST_PTR_FORMAT,
+      lpbin, GST_DEBUG_PAD_NAME (pad), caps);
+
+  /* filter out the elements based on the caps. */
+  g_mutex_lock (&lpbin->elements_lock);
+  gst_lp_bin_update_elements_list (lpbin);
+  mylist =
+      gst_element_factory_list_filter (lpbin->elements, caps, GST_PAD_SINK,
+      FALSE);
+  g_mutex_unlock (&lpbin->elements_lock);
+
+  GST_LOG_OBJECT (lpbin, "found factories %p", mylist);
+  GST_PLUGIN_FEATURE_LIST_DEBUG (mylist);
+
+  /* 2 additional elements for the already set audio/video sinks */
+  result = g_value_array_new (g_list_length (mylist) + 2);
+
+  /* Check if we already have an audio/video sink and if this is the case
+   * put it as the first element of the array */
+  if (lpbin->audio_sink) {
+    GstElementFactory *factory = gst_element_get_factory (lpbin->audio_sink);
+
+    if (factory && _factory_can_sink_caps (factory, caps)) {
+      GValue val = { 0, };
+
+      g_value_init (&val, G_TYPE_OBJECT);
+      g_value_set_object (&val, factory);
+      result = g_value_array_append (result, &val);
+      g_value_unset (&val);
+    }
+  }
+
+  if (lpbin->video_sink) {
+    GstElementFactory *factory = gst_element_get_factory (lpbin->video_sink);
+
+    if (factory && _factory_can_sink_caps (factory, caps)) {
+      GValue val = { 0, };
+
+      g_value_init (&val, G_TYPE_OBJECT);
+      g_value_set_object (&val, factory);
+      result = g_value_array_append (result, &val);
+      g_value_unset (&val);
+    }
+  }
+
+  for (tmp = mylist; tmp; tmp = tmp->next) {
+    GstElementFactory *factory = GST_ELEMENT_FACTORY_CAST (tmp->data);
+    GST_LOG_OBJECT (lpbin, "factories, factory name = %s",
+        GST_OBJECT_NAME (factory));
+    GValue val = { 0, };
+
+    if ( /*lpbin->audio_sink && */ gst_element_factory_list_is_type (factory,
+            GST_ELEMENT_FACTORY_TYPE_SINK |
+            GST_ELEMENT_FACTORY_TYPE_MEDIA_AUDIO)) {
+      continue;
+    }
+
+    if ( /*lpbin->video_sink && */ gst_element_factory_list_is_type (factory,
+            GST_ELEMENT_FACTORY_TYPE_SINK | GST_ELEMENT_FACTORY_TYPE_MEDIA_VIDEO
+            | GST_ELEMENT_FACTORY_TYPE_MEDIA_IMAGE)) {
+      continue;
+    }
+
+    g_value_init (&val, G_TYPE_OBJECT);
+    g_value_set_object (&val, factory);
+    g_value_array_append (result, &val);
+    GST_LOG_OBJECT (lpbin, "factories, factory name = %s added",
+        GST_OBJECT_NAME (factory));
+    g_value_unset (&val);
+  }
+  gst_plugin_feature_list_free (mylist);
+
+  return result;
 }
