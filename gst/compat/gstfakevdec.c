@@ -1,10 +1,12 @@
-/* GStreamer A-Law to PCM conversion
- * Copyright (C) 2000 by Abramo Bagnara <abramo@alsa-project.org>
+/* GStreamer Lightweight Playback Plugins
+ * Copyright (C) 2013 LG Electronics.
+ *	Author : Wonchul Lee <wonchul86.lee@lge.com> 
+ *	         Justin Joy <justin.joy.9to5@gmail.com> 
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
  * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * version 2 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -15,11 +17,6 @@
  * License along with this library; if not, write to the
  * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
  * Boston, MA 02111-1307, USA.
- */
-/**
- * SECTION:element-fakevdecdec
- *
- * This element decodes alaw audio. Alaw coding is also known as G.711.
  */
 
 #ifdef HAVE_CONFIG_H

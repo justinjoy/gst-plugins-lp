@@ -1,4 +1,4 @@
-/* GStreamer Lightweight Plugins
+/* GStreamer Lightweight Playback Plugins
  * Copyright (C) 2013 LG Electronics.
  *	Author : Wonchul Lee <wonchul86.lee@lge.com> 
  *	         Justin Joy <justin.joy.9to5@gmail.com> 
@@ -26,7 +26,6 @@
 #include <gst/audio/audio.h>
 
 G_BEGIN_DECLS
-
 #define GST_TYPE_FAKEADEC \
   (gst_fakeadec_get_type())
 #define GST_FAKEADEC(obj) \
@@ -37,23 +36,23 @@ G_BEGIN_DECLS
   (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_FAKEADEC))
 #define GST_IS_FAKEADEC_CLASS(klass) \
   (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_FAKEADEC))
-
 typedef struct _GstFakeAdec GstFakeAdec;
 typedef struct _GstFakeAdecClass GstFakeAdecClass;
 
-struct _GstFakeAdec {
+struct _GstFakeAdec
+{
   GstElement element;
 
-  GstPad *sinkpad,*srcpad;
-	gboolean src_caps_set;
+  GstPad *sinkpad, *srcpad;
+  gboolean src_caps_set;
 };
 
-struct _GstFakeAdecClass {
+struct _GstFakeAdecClass
+{
   GstElementClass parent_class;
 };
 
-GType gst_fakeadec_get_type(void);
+GType gst_fakeadec_get_type (void);
 
 G_END_DECLS
-
 #endif /* __GST_FAKEADEC_H__ */

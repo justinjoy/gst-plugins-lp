@@ -1,4 +1,4 @@
-/* GStreamer Lightweight Plugins
+/* GStreamer Lightweight Playback Plugins
  * Copyright (C) 2013 LG Electronics.
  *	Author : Justin Joy <justin.joy.9to5@gmail.com> 
  *
@@ -36,20 +36,20 @@ typedef struct _GstFCBinClass GstFCBinClass;
 
 enum
 {
-	GST_FC_BIN_STREAM_AUDIO = 0,
-	GST_FC_BIN_STREAM_VIDEO,
-	GST_FC_BIN_STREAM_TEXT,
-	GST_FC_BIN_STREAM_LAST
+  GST_FC_BIN_STREAM_AUDIO = 0,
+  GST_FC_BIN_STREAM_VIDEO,
+  GST_FC_BIN_STREAM_TEXT,
+  GST_FC_BIN_STREAM_LAST
 };
 
 struct _GstFCSelect
 {
-	const gchar *media_list[8];   /* the media types for the selector */
-	GstElement *selector;         /* the selector */
+  const gchar *media_list[8];   /* the media types for the selector */
+  GstElement *selector;         /* the selector */
 
-	GPtrArray *channels;
-	GstPad *srcpad;
-	//GstPad *sinkpad;
+  GPtrArray *channels;
+  GstPad *srcpad;
+  //GstPad *sinkpad;
 };
 
 struct _GstFCBin
@@ -58,7 +58,7 @@ struct _GstFCBin
 
   GstFlowReturn ret;
 
-	GstFCSelect select[GST_FC_BIN_STREAM_LAST];
+  GstFCSelect select[GST_FC_BIN_STREAM_LAST];
 };
 
 struct _GstFCBinClass
