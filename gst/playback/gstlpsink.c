@@ -232,7 +232,7 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
 
   switch (type) {
     case GST_LP_SINK_TYPE_AUDIO:
-      sink_name = "fakesink";
+      sink_name = "adecsink";
       pad_name = "audio_sink";
 
       break;
