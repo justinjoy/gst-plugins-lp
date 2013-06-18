@@ -34,10 +34,17 @@ enum
   PROP_0,
   PROP_URI,
   PROP_SOURCE,
+  PROP_N_VIDEO,
+  PROP_CURRENT_VIDEO,
+  PROP_N_AUDIO,
+  PROP_CURRENT_AUDIO,
+  PROP_N_TEXT,
+  PROP_CURRENT_TEXT,
   PROP_AUDIO_SINK,
   PROP_VIDEO_SINK,
   PROP_LAST
 };
+
 enum
 {
   SIGNAL_ABOUT_TO_FINISH,
@@ -82,7 +89,7 @@ static gboolean gst_lp_bin_setup_element (GstLpBin * lpbin);
 static gboolean gst_lp_bin_make_link (GstLpBin * lpbin);
 static void gst_lp_bin_set_sink (GstLpBin * lpbin, GstElement ** elem,
     const gchar * dbg, GstElement * sink);
-static GstElement *gst_lp_bin_get_current_sink (GstLpBin * playbin,
+static GstElement *gst_lp_bin_get_current_sink (GstLpBin * lpbin,
     GstElement ** elem, const gchar * dbg, GstLpSinkType type);
 static gint compare_factories_func (gconstpointer p1, gconstpointer p2);
 static void gst_lp_bin_update_elements_list (GstLpBin * lpbin);
@@ -159,6 +166,63 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
   g_object_class_install_property (gobject_klass, PROP_SOURCE,
       g_param_spec_object ("source", "Source", "Source element",
           GST_TYPE_ELEMENT, G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+  /**
+   * LPBin:n-video
+   *
+   * Get the total number of available video streams.
+   */
+  g_object_class_install_property (gobject_klass, PROP_N_VIDEO,
+      g_param_spec_int ("n-video", "Number Video",
+          "Total number of video streams", 0, G_MAXINT, 0,
+          G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+  /**
+   * LPBin:current-video
+   *
+   * Get or set the currently playing video stream. By default the first video
+   * stream with data is played.
+   */
+  g_object_class_install_property (gobject_klass, PROP_CURRENT_VIDEO,
+      g_param_spec_int ("current-video", "Current Video",
+          "Currently playing video stream (-1 = auto)",
+          -1, G_MAXINT, -1, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  /**
+   * LPBin:n-audio
+   *
+   * Get the total number of available audio streams.
+   */
+  g_object_class_install_property (gobject_klass, PROP_N_AUDIO,
+      g_param_spec_int ("n-audio", "Number Audio",
+          "Total number of audio streams", 0, G_MAXINT, 0,
+          G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+  /**
+   * LPBin:current-audio
+   *
+   * Get or set the currently playing audio stream. By default the first audio
+   * stream with data is played.
+   */
+  g_object_class_install_property (gobject_klass, PROP_CURRENT_AUDIO,
+      g_param_spec_int ("current-audio", "Current audio",
+          "Currently playing audio stream (-1 = auto)",
+          -1, G_MAXINT, -1, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  /**
+   * LPBin:n-text
+   *
+   * Get the total number of available subtitle streams.
+   */
+  g_object_class_install_property (gobject_klass, PROP_N_TEXT,
+      g_param_spec_int ("n-text", "Number Text",
+          "Total number of text streams", 0, G_MAXINT, 0,
+          G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+  /**
+   * LPBin:current-text:
+   *
+   * Get or set the currently playing subtitle stream. By default the first
+   * subtitle stream with data is played.
+   */
+  g_object_class_install_property (gobject_klass, PROP_CURRENT_TEXT,
+      g_param_spec_int ("current-text", "Current Text",
+          "Currently playing text stream (-1 = auto)",
+          -1, G_MAXINT, -1, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property (gobject_klass, PROP_VIDEO_SINK,
       g_param_spec_object ("video-sink", "Video Sink",
@@ -358,6 +422,18 @@ gst_lp_bin_set_property (GObject * object, guint prop_id,
     case PROP_URI:
       lpbin->uri = g_strdup (g_value_get_string (value));
       break;
+    case PROP_CURRENT_VIDEO:
+      g_object_set (lpbin->fcbin, "current-video", g_value_get_int (value),
+          NULL);
+      break;
+    case PROP_CURRENT_AUDIO:
+      g_object_set (lpbin->fcbin, "current-audio", g_value_get_int (value),
+          NULL);
+      break;
+    case PROP_CURRENT_TEXT:
+      g_object_set (lpbin->fcbin, "current-text", g_value_get_int (value),
+          NULL);
+      break;
     case PROP_VIDEO_SINK:
       gst_lp_bin_set_sink (lpbin, &lpbin->video_sink, "video",
           g_value_get_object (value));
@@ -388,6 +464,66 @@ gst_lp_bin_get_property (GObject * object, guint prop_id, GValue * value,
       GST_OBJECT_LOCK (lpbin);
       g_value_set_object (value, lpbin->source);
       GST_OBJECT_UNLOCK (lpbin);
+      break;
+    }
+    case PROP_N_VIDEO:
+    {
+      gint n_video;
+
+      GST_LP_BIN_LOCK (lpbin);
+      g_object_get (lpbin->fcbin, "n-video", &n_video, NULL);
+      g_value_set_int (value, n_video);
+      GST_LP_BIN_UNLOCK (lpbin);
+      break;
+    }
+    case PROP_CURRENT_VIDEO:
+    {
+      gint current_video;
+
+      GST_LP_BIN_LOCK (lpbin);
+      g_object_get (lpbin->fcbin, "current-video", &current_video, NULL);
+      g_value_set_int (value, current_video);
+      GST_LP_BIN_UNLOCK (lpbin);
+      break;
+    }
+    case PROP_N_AUDIO:
+    {
+      gint n_audio;
+
+      GST_LP_BIN_LOCK (lpbin);
+      g_object_get (lpbin->fcbin, "n-audio", &n_audio, NULL);
+      g_value_set_int (value, n_audio);
+      GST_LP_BIN_UNLOCK (lpbin);
+      break;
+    }
+    case PROP_CURRENT_AUDIO:
+    {
+      gint current_audio;
+
+      GST_LP_BIN_LOCK (lpbin);
+      g_object_get (lpbin->fcbin, "current-audio", &current_audio, NULL);
+      g_value_set_int (value, current_audio);
+      GST_LP_BIN_UNLOCK (lpbin);
+      break;
+    }
+    case PROP_N_TEXT:
+    {
+      gint n_text;
+
+      GST_LP_BIN_LOCK (lpbin);
+      g_object_get (lpbin->fcbin, "n-text", &n_text, NULL);
+      g_value_set_int (value, n_text);
+      GST_LP_BIN_UNLOCK (lpbin);
+      break;
+    }
+    case PROP_CURRENT_TEXT:
+    {
+      gint current_text;
+
+      GST_LP_BIN_LOCK (lpbin);
+      g_object_get (lpbin->fcbin, "current-text", &current_text, NULL);
+      g_value_set_int (value, current_text);
+      GST_LP_BIN_UNLOCK (lpbin);
       break;
     }
     default:

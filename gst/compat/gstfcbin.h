@@ -23,6 +23,7 @@
 #define __GST_FC_BIN_H__
 
 #include <gst/gst.h>
+#include "../playback/gstlpsink.h"
 
 G_BEGIN_DECLS
 #define GST_TYPE_FC_BIN (gst_fc_bin_get_type())
@@ -30,6 +31,9 @@ G_BEGIN_DECLS
 #define GST_FC_BIN_CLASS(klass) (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_FC_BIN,GstFCBinClass))
 #define GST_IS_FC_BIN(obj) (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_FC_BIN))
 #define GST_IS_FC_BIN_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_FC_BIN))
+#define GST_FC_BIN_GET_LOCK(bin) (&((GstFCBin*)(bin))->lock)
+#define GST_FC_BIN_LOCK(bin) (g_rec_mutex_lock (GST_FC_BIN_GET_LOCK(bin)))
+#define GST_FC_BIN_UNLOCK(bin) (g_rec_mutex_unlock (GST_FC_BIN_GET_LOCK(bin)))
 typedef struct _GstFCSelect GstFCSelect;
 typedef struct _GstFCBin GstFCBin;
 typedef struct _GstFCBinClass GstFCBinClass;
@@ -46,6 +50,7 @@ struct _GstFCSelect
 {
   const gchar *media_list[8];   /* the media types for the selector */
   GstElement *selector;         /* the selector */
+  GstLpSinkType type;
 
   GPtrArray *channels;
   GstPad *srcpad;
@@ -56,7 +61,11 @@ struct _GstFCBin
 {
   GstBin parent;
 
-  GstFlowReturn ret;
+  GRecMutex lock;
+
+  gint current_video;           /* the currently selected stream */
+  gint current_audio;           /* the currently selected stream */
+  gint current_text;            /* the currently selected stream */
 
   GstFCSelect select[GST_FC_BIN_STREAM_LAST];
 };

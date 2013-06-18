@@ -26,6 +26,7 @@
 
 #include "gstfcbin.h"
 
+#include <gst/gst.h>
 #include <gst/pbutils/missing-plugins.h>
 #include <stdlib.h>
 #include <string.h>
@@ -36,7 +37,30 @@ GST_DEBUG_CATEGORY_STATIC (fc_bin_debug);
 #define parent_class gst_fc_bin_parent_class
 G_DEFINE_TYPE (GstFCBin, gst_fc_bin, GST_TYPE_BIN);
 
+#define DEFAULT_N_VIDEO         0
+#define DEFAULT_CURRENT_VIDEO   0
+#define DEFAULT_N_AUDIO         0
+#define DEFAULT_CURRENT_AUDIO   0
+#define DEFAULT_N_TEXT          0
+#define DEFAULT_CURRENT_TEXT    0
+
+enum
+{
+  PROP_0,
+  PROP_N_VIDEO,
+  PROP_CURRENT_VIDEO,
+  PROP_N_AUDIO,
+  PROP_CURRENT_AUDIO,
+  PROP_N_TEXT,
+  PROP_CURRENT_TEXT,
+  PROP_LAST
+};
+
 static void gst_fc_bin_finalize (GObject * obj);
+static void gst_fc_bin_set_property (GObject * object, guint prop_id,
+    const GValue * value, GParamSpec * spec);
+static void gst_fc_bin_get_property (GObject * object, guint prop_id,
+    GValue * value, GParamSpec * spec);
 static GstPad *gst_fc_bin_request_new_pad (GstElement * element,
     GstPadTemplate * templ, const gchar * name, const GstCaps * caps);
 static gboolean array_has_value (const gchar * values[], const gchar * value);
@@ -91,11 +115,12 @@ static void
 gst_fc_bin_class_init (GstFCBinClass * klass)
 {
   GObjectClass *gobject_klass;
-  GstBinClass *gstbin_klass;
   GstElementClass *element_class = (GstElementClass *) klass;
 
   gobject_klass = (GObjectClass *) klass;
-  gstbin_klass = (GstBinClass *) klass;
+
+  gobject_klass->set_property = gst_fc_bin_set_property;
+  gobject_klass->get_property = gst_fc_bin_get_property;
 
   gobject_klass->finalize = gst_fc_bin_finalize;
 
@@ -121,6 +146,64 @@ gst_fc_bin_class_init (GstFCBinClass * klass)
       "data flow controller behind Fake Decoder",
       "Justin Joy <justin.joy.9to5@gmail.com, Wonchul Lee <wonchul86.lee@lge.com>");
 
+  /**
+   * GstFcBin:n-video
+   *
+   * Get the total number of available video streams.
+   */
+  g_object_class_install_property (gobject_klass, PROP_N_VIDEO,
+      g_param_spec_int ("n-video", "Number Video",
+          "Total number of video streams", 0, G_MAXINT, 0,
+          G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+  /**
+   * GstFcBin:current-video
+   *
+   * Get or set the currently playing video stream. By default the first video
+   * stream with data is played.
+   */
+  g_object_class_install_property (gobject_klass, PROP_CURRENT_VIDEO,
+      g_param_spec_int ("current-video", "Current Video",
+          "Currently playing video stream (-1 = auto)",
+          -1, G_MAXINT, -1, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  /**
+   * GstFcBin:n-audio
+   *
+   * Get the total number of available audio streams.
+   */
+  g_object_class_install_property (gobject_klass, PROP_N_AUDIO,
+      g_param_spec_int ("n-audio", "Number Audio",
+          "Total number of audio streams", 0, G_MAXINT, 0,
+          G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+  /**
+   * GstFcBin:current-audio
+   *
+   * Get or set the currently playing audio stream. By default the first audio
+   * stream with data is played.
+   */
+  g_object_class_install_property (gobject_klass, PROP_CURRENT_AUDIO,
+      g_param_spec_int ("current-audio", "Current audio",
+          "Currently playing audio stream (-1 = auto)",
+          -1, G_MAXINT, -1, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  /**
+   * GstFcBin:n-text
+   *
+   * Get the total number of available subtitle streams.
+   */
+  g_object_class_install_property (gobject_klass, PROP_N_TEXT,
+      g_param_spec_int ("n-text", "Number Text",
+          "Total number of text streams", 0, G_MAXINT, 0,
+          G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+  /**
+   * GstFcBin:current-text:
+   *
+   * Get or set the currently playing subtitle stream. By default the first
+   * subtitle stream with data is played.
+   */
+  g_object_class_install_property (gobject_klass, PROP_CURRENT_TEXT,
+      g_param_spec_int ("current-text", "Current Text",
+          "Currently playing text stream (-1 = auto)",
+          -1, G_MAXINT, -1, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
   //element_class->change_state = GST_DEBUG_FUNCPTR (gst_fc_bin_change_state);
   element_class->request_new_pad =
       GST_DEBUG_FUNCPTR (gst_fc_bin_request_new_pad);
@@ -132,6 +215,8 @@ static void
 gst_fc_bin_init (GstFCBin * fcbin)
 {
   GST_DEBUG_OBJECT (fcbin, "initializing");
+
+  g_rec_mutex_init (&fcbin->lock);
 
   fcbin->select[GST_FC_BIN_STREAM_AUDIO].channels = g_ptr_array_new ();
   fcbin->select[GST_FC_BIN_STREAM_AUDIO].media_list[0] = "audio/";
@@ -146,6 +231,10 @@ gst_fc_bin_init (GstFCBin * fcbin)
   fcbin->select[GST_FC_BIN_STREAM_TEXT].media_list[4] = "subpicture/x-dvd";
   fcbin->select[GST_FC_BIN_STREAM_TEXT].media_list[5] = "subpicture/";
   fcbin->select[GST_FC_BIN_STREAM_TEXT].media_list[6] = "subtitle/";
+
+  fcbin->current_video = DEFAULT_CURRENT_VIDEO;
+  fcbin->current_audio = DEFAULT_CURRENT_AUDIO;
+  fcbin->current_text = DEFAULT_CURRENT_TEXT;
 }
 
 
@@ -153,7 +242,351 @@ gst_fc_bin_init (GstFCBin * fcbin)
 static void
 gst_fc_bin_finalize (GObject * obj)
 {
+  GstFCBin *fcbin;
+
+  fcbin = GST_FC_BIN (obj);
+
+  g_rec_mutex_clear (&fcbin->lock);
+
   G_OBJECT_CLASS (parent_class)->finalize (obj);
+}
+
+static gboolean
+gst_fc_bin_set_current_video_stream (GstFCBin * fcbin, gint stream)
+{
+  GPtrArray *channels;
+  GstPad *sinkpad;
+
+  GST_FC_BIN_LOCK (fcbin);
+
+  GST_DEBUG_OBJECT (fcbin, "Changing current video stream %d -> %d",
+      fcbin->current_video, stream);
+
+  if (!(channels = fcbin->select[GST_FC_BIN_STREAM_VIDEO].channels))
+    goto no_channels;
+
+  if (stream == -1 || channels->len <= stream) {
+    sinkpad = NULL;
+  } else {
+    /* take channel from selected stream */
+    sinkpad = g_ptr_array_index (channels, stream);
+  }
+
+  if (sinkpad)
+    gst_object_ref (sinkpad);
+  GST_FC_BIN_UNLOCK (fcbin);
+
+  if (sinkpad) {
+    GstObject *selector;
+
+    if ((selector = gst_pad_get_parent (sinkpad))) {
+      GstPad *old_sinkpad;
+
+      g_object_get (selector, "active-pad", &old_sinkpad, NULL);
+
+      if (old_sinkpad != sinkpad) {
+        /*if (gst_play_bin_send_custom_event (selector,
+           "playsink-custom-video-flush"))
+           fcbin->video_pending_flush_finish = TRUE; */
+
+        /* activate the selected pad */
+        g_object_set (selector, "active-pad", sinkpad, NULL);
+      }
+
+      gst_object_unref (selector);
+    }
+    gst_object_unref (sinkpad);
+  }
+  return TRUE;
+
+no_channels:
+  {
+    GST_FC_BIN_UNLOCK (fcbin);
+    GST_WARNING_OBJECT (fcbin, "can't switch video, we have no channels");
+    return FALSE;
+  }
+}
+
+static gboolean
+gst_fc_bin_set_current_audio_stream (GstFCBin * fcbin, gint stream)
+{
+  GPtrArray *channels;
+  GstPad *sinkpad;
+
+  GST_FC_BIN_LOCK (fcbin);
+
+  GST_DEBUG_OBJECT (fcbin, "Changing current audio stream %d -> %d",
+      fcbin->current_audio, stream);
+
+  if (!(channels = fcbin->select[GST_FC_BIN_STREAM_AUDIO].channels))
+    goto no_channels;
+
+  if (stream == -1 || channels->len <= stream) {
+    sinkpad = NULL;
+  } else {
+    /* take channel from selected stream */
+    sinkpad = g_ptr_array_index (channels, stream);
+  }
+
+  if (sinkpad)
+    gst_object_ref (sinkpad);
+  GST_FC_BIN_UNLOCK (fcbin);
+
+  if (sinkpad) {
+    GstObject *selector;
+
+    if ((selector = gst_pad_get_parent (sinkpad))) {
+      GstPad *old_sinkpad;
+
+      g_object_get (selector, "active-pad", &old_sinkpad, NULL);
+
+      if (old_sinkpad != sinkpad) {
+        /*if (gst_play_bin_send_custom_event (selector,
+           "playsink-custom-audio-flush"))
+           fcbin->audio_pending_flush_finish = TRUE; */
+
+        /* activate the selected pad */
+        g_object_set (selector, "active-pad", sinkpad, NULL);
+      }
+
+      gst_object_unref (selector);
+    }
+    gst_object_unref (sinkpad);
+  }
+  return TRUE;
+
+no_channels:
+  {
+    GST_FC_BIN_UNLOCK (fcbin);
+    GST_WARNING_OBJECT (fcbin, "can't switch audio, we have no channels");
+    return FALSE;
+  }
+}
+
+static gboolean
+gst_fc_bin_set_current_text_stream (GstFCBin * fcbin, gint stream)
+{
+  GPtrArray *channels;
+  GstPad *sinkpad;
+
+  GST_FC_BIN_LOCK (fcbin);
+
+  GST_DEBUG_OBJECT (fcbin, "Changing current text stream %d -> %d",
+      fcbin->current_text, stream);
+
+  if (!(channels = fcbin->select[GST_FC_BIN_STREAM_TEXT].channels))
+    goto no_channels;
+
+  if (stream == -1 || channels->len <= stream) {
+    sinkpad = NULL;
+  } else {
+    /* take channel from selected stream */
+    sinkpad = g_ptr_array_index (channels, stream);
+  }
+
+  if (sinkpad)
+    gst_object_ref (sinkpad);
+  GST_FC_BIN_UNLOCK (fcbin);
+
+  if (sinkpad) {
+    GstObject *selector;
+
+    if ((selector = gst_pad_get_parent (sinkpad))) {
+      GstPad *old_sinkpad;
+
+      g_object_get (selector, "active-pad", &old_sinkpad, NULL);
+
+      if (old_sinkpad != sinkpad) {
+        /* activate the selected pad */
+        g_object_set (selector, "active-pad", sinkpad, NULL);
+      }
+
+      gst_object_unref (selector);
+    }
+    gst_object_unref (sinkpad);
+  }
+  return TRUE;
+
+no_channels:
+  {
+    GST_FC_BIN_UNLOCK (fcbin);
+    GST_WARNING_OBJECT (fcbin, "can't switch text, we have no channels");
+    return FALSE;
+  }
+}
+
+static void
+gst_fc_bin_get_property (GObject * object, guint prop_id, GValue * value,
+    GParamSpec * pspec)
+{
+  GstFCBin *fcbin = GST_FC_BIN (object);
+
+  switch (prop_id) {
+    case PROP_N_VIDEO:
+    {
+      gint n_video;
+      GPtrArray *channels_video;
+
+      GST_FC_BIN_LOCK (fcbin);
+      channels_video =
+          g_ptr_array_ref (fcbin->select[GST_FC_BIN_STREAM_VIDEO].channels);
+      n_video = (channels_video ? channels_video->len : 0);
+      g_value_set_int (value, n_video);
+
+      g_ptr_array_unref (channels_video);
+      GST_FC_BIN_UNLOCK (fcbin);
+      break;
+    }
+    case PROP_CURRENT_VIDEO:
+      GST_FC_BIN_LOCK (fcbin);
+      g_value_set_int (value, fcbin->current_video);
+      GST_FC_BIN_UNLOCK (fcbin);
+      break;
+    case PROP_N_AUDIO:
+    {
+      gint n_audio;
+      GPtrArray *channels_audio;
+
+      GST_FC_BIN_LOCK (fcbin);
+      channels_audio =
+          g_ptr_array_ref (fcbin->select[GST_FC_BIN_STREAM_AUDIO].channels);
+      n_audio = (channels_audio ? channels_audio->len : 0);
+      g_value_set_int (value, n_audio);
+
+      g_ptr_array_unref (channels_audio);
+      GST_FC_BIN_UNLOCK (fcbin);
+      break;
+    }
+    case PROP_CURRENT_AUDIO:
+      GST_FC_BIN_LOCK (fcbin);
+      g_value_set_int (value, fcbin->current_audio);
+      GST_FC_BIN_UNLOCK (fcbin);
+      break;
+    case PROP_N_TEXT:
+    {
+      gint n_text;
+      GPtrArray *channels_text;
+
+      GST_FC_BIN_LOCK (fcbin);
+      channels_text =
+          g_ptr_array_ref (fcbin->select[GST_FC_BIN_STREAM_TEXT].channels);
+      n_text = (channels_text ? channels_text->len : 0);
+      g_value_set_int (value, n_text);
+
+      g_ptr_array_unref (channels_text);
+      GST_FC_BIN_UNLOCK (fcbin);
+      break;
+    }
+    case PROP_CURRENT_TEXT:
+      GST_FC_BIN_LOCK (fcbin);
+      g_value_set_int (value, fcbin->current_text);
+      GST_FC_BIN_UNLOCK (fcbin);
+      break;
+
+    default:
+      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+      break;
+  }
+}
+
+
+static void
+gst_fc_bin_set_property (GObject * object, guint prop_id,
+    const GValue * value, GParamSpec * pspec)
+{
+  GstFCBin *fcbin = GST_FC_BIN (object);
+
+  switch (prop_id) {
+    case PROP_CURRENT_VIDEO:
+      gst_fc_bin_set_current_video_stream (fcbin, g_value_get_int (value));
+      break;
+    case PROP_CURRENT_AUDIO:
+      gst_fc_bin_set_current_audio_stream (fcbin, g_value_get_int (value));
+      break;
+    case PROP_CURRENT_TEXT:
+      gst_fc_bin_set_current_text_stream (fcbin, g_value_get_int (value));
+      break;
+
+    default:
+      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+      break;
+  }
+}
+
+static int
+get_current_stream_number (GstFCBin * fcbin, GPtrArray * channels)
+{
+  /* Internal API cleanup would make this easier... */
+  int i;
+  GstPad *pad, *current;
+  GstObject *selector = NULL;
+  int ret = -1;
+
+  for (i = 0; i < channels->len; i++) {
+    pad = g_ptr_array_index (channels, i);
+    if ((selector = gst_pad_get_parent (pad))) {
+      g_object_get (selector, "active-pad", &current, NULL);
+      gst_object_unref (selector);
+
+      if (pad == current) {
+        gst_object_unref (current);
+        ret = i;
+        break;
+      }
+
+      if (current)
+        gst_object_unref (current);
+    }
+  }
+
+  return ret;
+}
+
+
+static void
+selector_active_pad_changed (GObject * selector, GParamSpec * pspec,
+    GstFCBin * fcbin)
+{
+  const gchar *property;
+  GstFCSelect *select = NULL;
+  gint i;
+
+  GST_FC_BIN_LOCK (fcbin);
+
+  for (i = 0; i < GST_FC_BIN_STREAM_LAST; i++) {
+    if (selector == G_OBJECT (fcbin->select[i].selector)) {
+      select = &fcbin->select[i];
+    }
+  }
+
+  if (!select) {
+    GST_FC_BIN_UNLOCK (fcbin);
+    return;
+  }
+
+  switch (select->type) {
+    case GST_LP_SINK_TYPE_VIDEO:
+      property = "current-video";
+      fcbin->current_video =
+          get_current_stream_number (fcbin, select->channels);
+      break;
+    case GST_LP_SINK_TYPE_AUDIO:
+      property = "current-audio";
+      fcbin->current_audio =
+          get_current_stream_number (fcbin, select->channels);
+      break;
+    case GST_LP_SINK_TYPE_TEXT:
+      property = "current-text";
+      fcbin->current_text = get_current_stream_number (fcbin, select->channels);
+      break;
+
+    default:
+      property = NULL;
+  }
+  GST_FC_BIN_UNLOCK (fcbin);
+
+  if (property)
+    g_object_notify (G_OBJECT (fcbin), property);
 }
 
 static GstPad *
@@ -164,7 +597,7 @@ gst_fc_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
   const GstStructure *s;
   const gchar *in_name;
   gint i, j;
-  GstFCSelect *selected;
+  GstFCSelect *select;
   GstPad *sinkpad, *ghost_sinkpad;
   GstCaps *in_caps;
 
@@ -177,54 +610,58 @@ gst_fc_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
   for (i = 0; i < GST_FC_BIN_STREAM_LAST; i++) {
     for (j = 0; fcbin->select[i].media_list[j]; j++) {
       if (array_has_value (fcbin->select[i].media_list, in_name)) {
-        selected = &fcbin->select[i];
+        select = &fcbin->select[i];
         break;
       }
     }
   }
 
-  if (selected == NULL)
+  if (select == NULL)
     goto unknown_type;
 
-  if (selected->selector == NULL) {
-    selected->selector = gst_element_factory_make ("input-selector", NULL);
+  if (select->selector == NULL) {
+    select->selector = gst_element_factory_make ("input-selector", NULL);
 
-    if (selected->selector == NULL) {
+    if (select->selector == NULL) {
       /* gst_element_post_message (GST_ELEMENT_CAST (fcbin), 
          gst_missing_element_message_new (GST_ELEMENT_CAST (fcbin),
          "input-selector")); */
     } else {
 
-      g_object_set (selected->selector, "sync-streams", TRUE, NULL);
+      g_object_set (select->selector, "sync-streams", TRUE, NULL);
 
-      gst_bin_add (GST_BIN_CAST (fcbin), selected->selector);
-      gst_element_set_state (selected->selector, GST_STATE_PAUSED);
+      g_signal_connect (select->selector, "notify::active-pad",
+          G_CALLBACK (selector_active_pad_changed), fcbin);
+
+      GST_DEBUG_OBJECT (fcbin, "adding new selector %p", select->selector);
+      gst_bin_add (GST_BIN_CAST (fcbin), select->selector);
+      gst_element_set_state (select->selector, GST_STATE_PAUSED);
     }
   }
 
-  if (selected->srcpad == NULL) {
-    if (selected->selector) {
+  if (select->srcpad == NULL) {
+    if (select->selector) {
       GstPad *sel_srcpad;
 
-      sel_srcpad = gst_element_get_static_pad (selected->selector, "src");
-      selected->srcpad = gst_ghost_pad_new (NULL, sel_srcpad);
-      gst_pad_set_active (selected->srcpad, TRUE);
-      gst_element_add_pad (element, selected->srcpad);
+      sel_srcpad = gst_element_get_static_pad (select->selector, "src");
+      select->srcpad = gst_ghost_pad_new (NULL, sel_srcpad);
+      gst_pad_set_active (select->srcpad, TRUE);
+      gst_element_add_pad (element, select->srcpad);
     }
   }
 
-  if (selected->selector) {
-    gchar *pad_name = g_strdup_printf ("sink_%d", selected->channels->len);
-    if ((sinkpad = gst_element_get_request_pad (selected->selector, pad_name))) {
-      g_object_set_data (G_OBJECT (sinkpad), "fcbin.select", selected);
+  if (select->selector) {
+    gchar *pad_name = g_strdup_printf ("sink_%d", select->channels->len);
+    if ((sinkpad = gst_element_get_request_pad (select->selector, pad_name))) {
+      g_object_set_data (G_OBJECT (sinkpad), "fcbin.select", select);
 
       ghost_sinkpad = gst_ghost_pad_new (NULL, sinkpad);
       gst_pad_set_active (ghost_sinkpad, TRUE);
       gst_element_add_pad (element, ghost_sinkpad);
       g_object_set_data (G_OBJECT (ghost_sinkpad), "fcbin.srcpad",
-          selected->srcpad);
+          select->srcpad);
 
-      g_ptr_array_add (selected->channels, sinkpad);
+      g_ptr_array_add (select->channels, sinkpad);
     }
   }
 
@@ -235,13 +672,13 @@ done:
   return ghost_sinkpad;
 }
 
-//FIXME need to implement resource deallocation code.
+//TODO need to implement resource deallocation code.
 /*
 static void
 gst_fc_bin_release_pad (GstElement * element, GstPad *pad)
 {
 	GstFCBin * fcbin;
-	GstFCSelect *selected;
+	GstFCSelect *select;
 	GstPad *sinkpad;
 	GstFCSelect *select;
 
@@ -250,7 +687,7 @@ gst_fc_bin_release_pad (GstElement * element, GstPad *pad)
 	sinkpad = gst_ghost_pad_get_target (GST_GHOST_PAD_CAST (pad));
 	select = g_object_get_data (G_OBJECT(sinkpad), "fcbin.select");
 	
-	//gst_element_release_request_pad (selected->selector, ); //FIXME 
+	//gst_element_release_request_pad (select->selector, ); //FIXME 
 	
 }
 */
