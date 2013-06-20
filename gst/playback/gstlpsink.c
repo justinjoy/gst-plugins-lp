@@ -271,6 +271,7 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
 
   sinkpad = gst_element_get_static_pad (sink_element, "sink");
   gst_ghost_pad_set_target (GST_GHOST_PAD_CAST (res), sinkpad);
+  gst_object_unref (sinkpad);
 beach:
 
   //GST_LP_SINK_UNLOCK (lpsink);
@@ -483,10 +484,22 @@ gst_lp_sink_change_state (GstElement * element, GstStateChange transition)
     case GST_STATE_CHANGE_READY_TO_PAUSED:
       break;
     case GST_STATE_CHANGE_READY_TO_NULL:
-      if (lpsink->audio_sink != NULL)
+      if (lpsink->audio_pad != NULL)
+        gst_ghost_pad_set_target (GST_GHOST_PAD_CAST (lpsink->audio_pad), NULL);
+      if (lpsink->video_pad != NULL)
+        gst_ghost_pad_set_target (GST_GHOST_PAD_CAST (lpsink->video_pad), NULL);
+      if (lpsink->audio_sink != NULL) {
         gst_element_set_state (lpsink->audio_sink, GST_STATE_NULL);
-      if (lpsink->video_sink != NULL)
+        gst_bin_remove (GST_BIN_CAST (lpsink), lpsink->audio_sink);
+        //g_assert (lpsink->audio_sink != NULL);
+        lpsink->audio_sink = NULL;
+      }
+      if (lpsink->video_sink != NULL) {
         gst_element_set_state (lpsink->video_sink, GST_STATE_NULL);
+        gst_bin_remove (GST_BIN_CAST (lpsink), lpsink->video_sink);
+        //g_assert (lpsink->video_sink != NULL);
+        lpsink->video_sink = NULL;
+      }
       break;
     default:
       break;

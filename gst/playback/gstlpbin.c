@@ -318,7 +318,7 @@ gst_lp_bin_get_property (GObject * object, guint prop_id, GValue * value,
       GST_OBJECT_UNLOCK (lpbin);
       break;
     }
-    case PROP_VIDEO_SINK:
+    /*case PROP_VIDEO_SINK:
       g_value_take_object (value,
           gst_lp_bin_get_current_sink (lpbin, &lpbin->video_sink,
               "video", GST_LP_SINK_TYPE_VIDEO));
@@ -327,7 +327,7 @@ gst_lp_bin_get_property (GObject * object, guint prop_id, GValue * value,
       g_value_take_object (value,
           gst_lp_bin_get_current_sink (lpbin, &lpbin->audio_sink,
               "audio", GST_LP_SINK_TYPE_AUDIO));
-      break;
+      break;*/
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
