@@ -491,14 +491,12 @@ gst_lp_sink_change_state (GstElement * element, GstStateChange transition)
       if (lpsink->audio_sink != NULL) {
         gst_element_set_state (lpsink->audio_sink, GST_STATE_NULL);
         gst_bin_remove (GST_BIN_CAST (lpsink), lpsink->audio_sink);
-        g_object_unref (lpsink->audio_sink);
         //g_assert (lpsink->audio_sink != NULL);
         lpsink->audio_sink = NULL;
       }
       if (lpsink->video_sink != NULL) {
         gst_element_set_state (lpsink->video_sink, GST_STATE_NULL);
         gst_bin_remove (GST_BIN_CAST (lpsink), lpsink->video_sink);
-        g_object_unref (lpsink->video_sink);
         //g_assert (lpsink->video_sink != NULL);
         lpsink->video_sink = NULL;
       }
