@@ -97,6 +97,7 @@ static gboolean gst_lp_bin_autoplug_continue (GstElement * element,
     GstPad * pad, GstCaps * caps);
 static GValueArray *gst_lp_bin_autoplug_factories (GstElement * element,
     GstPad * pad, GstCaps * caps);
+static void gst_lp_bin_deactive_signal_handler (GstLpBin * lpbin);
 
 static GstElementClass *parent_class;
 
@@ -162,12 +163,12 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
   g_object_class_install_property (gobject_klass, PROP_VIDEO_SINK,
       g_param_spec_object ("video-sink", "Video Sink",
           "the video output element to use (NULL = default sink)",
-          GST_TYPE_ELEMENT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+          GST_TYPE_ELEMENT, G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property (gobject_klass, PROP_AUDIO_SINK,
       g_param_spec_object ("audio-sink", "Audio Sink",
           "the audio output element to use (NULL = default sink)",
-          GST_TYPE_ELEMENT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+          GST_TYPE_ELEMENT, G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
 
   gst_lp_bin_signals[SIGNAL_ABOUT_TO_FINISH] =
       g_signal_new ("about-to-finish", G_TYPE_FROM_CLASS (klass),
@@ -202,11 +203,82 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
   klass->autoplug_factories = GST_DEBUG_FUNCPTR (gst_lp_bin_autoplug_factories);
 }
 
+static gboolean
+gst_lp_bin_bus_cb (GstBus * bus, GstMessage * message, gpointer data)
+{
+  GstLpBin *lpbin = (GstLpBin *) data;
+  GST_DEBUG_OBJECT (lpbin, "gst_lp_bin_bus_cb");
+  switch (GST_MESSAGE_TYPE (message)) {
+    case GST_MESSAGE_STATE_CHANGED:
+      GST_DEBUG_OBJECT (lpbin,
+          "gst_lp_bin_bus_cb : GST_MESSAGE_STATE_CHANGED, element name = %s",
+          GST_OBJECT_NAME (GST_MESSAGE_SRC (message)));
+      GstState oldstate, newstate, pending;
+      gst_message_parse_state_changed (message, &oldstate, &newstate, &pending);
+
+      GST_DEBUG_OBJECT (lpbin,
+          "gst_lp_bin_bus_cb : GST_MESSAGE_STATE_CHANGED, state-changed: %s -> %s, pending-state = %s",
+          gst_element_state_get_name (oldstate),
+          gst_element_state_get_name (newstate),
+          gst_element_state_get_name (pending));
+
+      if (newstate == GST_STATE_READY
+          && GST_IS_ELEMENT (GST_MESSAGE_SRC (message))) {
+        GstElement *elem = NULL;
+        gchar *elem_name = NULL;
+        GstElementFactory *factory = NULL;
+        const gchar *klass = NULL;
+
+        elem = GST_ELEMENT (GST_MESSAGE_SRC (message));
+        factory = gst_element_get_factory (elem);
+        klass = gst_element_factory_get_klass (factory);
+
+        if (strstr (klass, "Demux")) {
+          gchar *elem_name = gst_element_get_name (elem);
+          GST_DEBUG_OBJECT (lpbin,
+              "gst_lp_bin_bus_cb : GST_MESSAGE_STATE_CHANGED, element_name = %s",
+              elem_name);
+
+          if (g_object_class_find_property (G_OBJECT_GET_CLASS (elem),
+                  "thumbnail-mode"))
+            g_object_set (elem, "thumbnail-mode", TRUE, NULL);
+          else
+            GST_WARNING_OBJECT (lpbin,
+                "gst_lp_bin_bus_cb : GST_MESSAGE_STATE_CHANGED, %s doesn't thumbnail-mode property.",
+                elem_name);
+        } else if (strstr (klass, "Parse")) {
+          gchar *elem_name = gst_element_get_name (elem);
+          GST_DEBUG_OBJECT (lpbin,
+              "gst_lp_bin_bus_cb : GST_MESSAGE_STATE_CHANGED, element_name = %s",
+              elem_name);
+
+          /*if (g_object_class_find_property (G_OBJECT_GET_CLASS (elem), "thumbnail-mode"))
+             g_object_set (elem, "thumbnail-mode", TRUE, NULL);
+             else
+             GST_WARNING_OBJECT (lpbin, "gstBusCallbackHandle : GST_MESSAGE_STATE_CHANGED, %s doesn't thumbnail-mode property.", elem_name); */
+        }
+
+        g_free (elem_name);
+      }
+      break;
+  }
+  return TRUE;
+}
+
 static void
 gst_lp_bin_init (GstLpBin * lpbin)
 {
   GST_DEBUG_CATEGORY_INIT (gst_lp_bin_debug, "lpbin", 0,
       "Lightweight Play Bin");
+
+  lpbin->bus = gst_pipeline_get_bus (GST_PIPELINE (lpbin));
+  if (lpbin->bus) {
+    gst_bus_add_signal_watch (lpbin->bus);
+    lpbin->bus_msg_cb_id =
+        g_signal_connect (lpbin->bus, "message", G_CALLBACK (gst_lp_bin_bus_cb),
+        lpbin);
+    gst_object_unref (lpbin->bus);
+  }
   g_rec_mutex_init (&lpbin->lock);
 
   /* first filter out the interesting element factories */
@@ -318,16 +390,6 @@ gst_lp_bin_get_property (GObject * object, guint prop_id, GValue * value,
       GST_OBJECT_UNLOCK (lpbin);
       break;
     }
-    /*case PROP_VIDEO_SINK:
-      g_value_take_object (value,
-          gst_lp_bin_get_current_sink (lpbin, &lpbin->video_sink,
-              "video", GST_LP_SINK_TYPE_VIDEO));
-      break;
-    case PROP_AUDIO_SINK:
-      g_value_take_object (value,
-          gst_lp_bin_get_current_sink (lpbin, &lpbin->audio_sink,
-              "audio", GST_LP_SINK_TYPE_AUDIO));
-      break;*/
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -514,6 +576,21 @@ gst_lp_bin_make_link (GstLpBin * lpbin)
   return TRUE;
 }
 
+static void
+gst_lp_bin_deactive_signal_handler (GstLpBin * lpbin)
+{
+  GST_DEBUG_OBJECT (lpbin, "deactive_signal_handler");
+  REMOVE_SIGNAL (lpbin->bus, lpbin->bus_msg_cb_id);
+  REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->pad_added_id);
+  REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->pad_removed_id);
+  REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->no_more_pads_id);
+  REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->source_element_id);
+  REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->drained_id);
+  REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->unknown_type_id);
+  REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->autoplug_factories_id);
+  REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->autoplug_continue_id);
+}
+
 static GstStateChangeReturn
 gst_lp_bin_change_state (GstElement * element, GstStateChange transition)
 {
@@ -541,6 +618,8 @@ gst_lp_bin_change_state (GstElement * element, GstStateChange transition)
   switch (transition) {
     case GST_STATE_CHANGE_READY_TO_NULL:
     {
+      gst_lp_bin_deactive_signal_handler (lpbin);
+
       if (lpbin->audio_sink)
         gst_element_set_state (lpbin->audio_sink, GST_STATE_NULL);
       if (lpbin->video_sink)

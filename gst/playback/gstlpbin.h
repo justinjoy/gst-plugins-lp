@@ -34,6 +34,12 @@ G_BEGIN_DECLS
 #define GST_LP_BIN_GET_LOCK(bin) (&((GstLpBin*)(bin))->lock)
 #define GST_LP_BIN_LOCK(bin) (g_rec_mutex_lock (GST_LP_BIN_GET_LOCK(bin)))
 #define GST_LP_BIN_UNLOCK(bin) (g_rec_mutex_unlock (GST_LP_BIN_GET_LOCK(bin)))
+#define REMOVE_SIGNAL(obj,id)                             \
+if (id) {                                                 \
+  if (g_signal_handler_is_connected (G_OBJECT (obj), id)) \
+    g_signal_handler_disconnect (G_OBJECT (obj), id);     \
+  id = 0;                                                 \
+}
 typedef struct _GstLpBin GstLpBin;
 typedef struct _GstLpBinClass GstLpBinClass;
 
@@ -50,7 +56,10 @@ struct _GstLpBin
   GstElement *source;
   GstFlowReturn ret;
 
+  GstBus *bus;
+
   gchar *uri;
+  gulong bus_msg_cb_id;
   gulong pad_added_id;
   gulong pad_removed_id;
   gulong no_more_pads_id;
