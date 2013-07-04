@@ -52,6 +52,9 @@ enum
   PROP_AUDIO_SINK,
   PROP_LAST
 };
+
+#define DEFAULT_THUMBNAIL_MODE FALSE
+
 static void gst_lp_sink_dispose (GObject * object);
 static void gst_lp_sink_finalize (GObject * object);
 static void gst_lp_sink_set_property (GObject * object, guint prop_id,
@@ -162,6 +165,7 @@ gst_lp_sink_init (GstLpSink * lpsink)
   lpsink->video_sink = NULL;
   lpsink->video_pad = NULL;
   lpsink->audio_pad = NULL;
+  lpsink->thumbnail_mode = DEFAULT_THUMBNAIL_MODE;
 }
 
 static void
@@ -209,6 +213,12 @@ gst_lp_sink_finalize (GObject * obj)
   G_OBJECT_CLASS (parent_class)->finalize (obj);
 }
 
+void
+gst_lp_sink_set_thumbnail_mode (GstLpSink * lpsink, gboolean thumbnail_mode)
+{
+  GST_DEBUG_OBJECT (lpsink, "set thumbnail mode as %d", thumbnail_mode);
+  lpsink->thumbnail_mode = thumbnail_mode;
+}
 
 /**
  * gst_lp_sink_request_pad
@@ -232,7 +242,10 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
 
   switch (type) {
     case GST_LP_SINK_TYPE_AUDIO:
-      sink_name = "adecsink";
+      if (lpsink->thumbnail_mode)
+        sink_name = "fakesink";
+      else
+        sink_name = "adecsink";
       pad_name = "audio_sink";
 
       break;

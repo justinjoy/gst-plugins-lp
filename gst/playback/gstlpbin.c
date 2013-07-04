@@ -42,17 +42,21 @@ enum
   PROP_CURRENT_TEXT,
   PROP_AUDIO_SINK,
   PROP_VIDEO_SINK,
+  PROP_THUMBNAIL_MODE,
   PROP_LAST
 };
 
 enum
 {
   SIGNAL_ABOUT_TO_FINISH,
+  SIGNAL_RETRIEVE_THUMBNAIL,
   SIGNAL_SOURCE_SETUP,
   SIGNAL_AUTOPLUG_CONTINUE,
   SIGNAL_AUTOPLUG_FACTORIES,
   LAST_SIGNAL
 };
+
+#define DEFAULT_THUMBNAIL_MODE FALSE
 
 /* GstObject overriding */
 static void gst_lp_bin_class_init (GstLpBinClass * klass);
@@ -105,6 +109,10 @@ static gboolean gst_lp_bin_autoplug_continue (GstElement * element,
 static GValueArray *gst_lp_bin_autoplug_factories (GstElement * element,
     GstPad * pad, GstCaps * caps);
 static void gst_lp_bin_deactive_signal_handler (GstLpBin * lpbin);
+static GstBuffer *gst_lp_bin_retrieve_thumbnail (GstLpBin * lpbin, gint width,
+    gint height, gchar * format);
+static void gst_lp_bin_set_thumbnail_mode (GstLpBin * lpbin,
+    gboolean thumbnail_mode);
 
 static GstElementClass *parent_class;
 
@@ -234,11 +242,23 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
           "the audio output element to use (NULL = default sink)",
           GST_TYPE_ELEMENT, G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
 
+  g_object_class_install_property (gobject_klass, PROP_THUMBNAIL_MODE,
+      g_param_spec_boolean ("thumbnail-mode", "Thumbnail mode",
+          "Thumbnail mode", DEFAULT_THUMBNAIL_MODE,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
   gst_lp_bin_signals[SIGNAL_ABOUT_TO_FINISH] =
       g_signal_new ("about-to-finish", G_TYPE_FROM_CLASS (klass),
       G_SIGNAL_RUN_LAST,
       G_STRUCT_OFFSET (GstLpBinClass, about_to_finish), NULL, NULL,
       g_cclosure_marshal_generic, G_TYPE_NONE, 0, G_TYPE_NONE);
+
+  gst_lp_bin_signals[SIGNAL_RETRIEVE_THUMBNAIL] =
+      g_signal_new ("retrieve-thumbnail", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
+      G_STRUCT_OFFSET (GstLpBinClass, retrieve_thumbnail), NULL, NULL,
+      g_cclosure_marshal_generic, GST_TYPE_BUFFER, 3, G_TYPE_INT, G_TYPE_INT,
+      G_TYPE_STRING);
 
   gst_lp_bin_signals[SIGNAL_SOURCE_SETUP] =
       g_signal_new ("source-setup", G_TYPE_FROM_CLASS (klass),
@@ -265,6 +285,7 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
 
   klass->autoplug_continue = GST_DEBUG_FUNCPTR (gst_lp_bin_autoplug_continue);
   klass->autoplug_factories = GST_DEBUG_FUNCPTR (gst_lp_bin_autoplug_factories);
+  klass->retrieve_thumbnail = GST_DEBUG_FUNCPTR (gst_lp_bin_retrieve_thumbnail);
 }
 
 static gboolean
@@ -320,6 +341,23 @@ gst_lp_bin_bus_cb (GstBus * bus, GstMessage * message, gpointer data)
              g_object_set (elem, "thumbnail-mode", TRUE, NULL);
              else
              GST_WARNING_OBJECT (lpbin, "gstBusCallbackHandle : GST_MESSAGE_STATE_CHANGED, %s doesn't thumbnail-mode property.", elem_name); */
+        } else if (strstr (klass, "Sink/Image")) {
+          gchar *elem_name = gst_element_get_name (elem);
+          GST_DEBUG_OBJECT (lpbin,
+              "gst_lp_bin_bus_cb : GST_MESSAGE_STATE_CHANGED, element_name = %s, klass = %s",
+              elem_name, klass);
+          if (g_object_class_find_property (G_OBJECT_GET_CLASS (elem),
+                  "thumbnail-mode")) {
+            if (lpbin->thumbnail_mode) {
+              GST_DEBUG_OBJECT (lpbin,
+                  "gst_lp_bin_bus_cb : GST_MESSAGE_STATE_CHANGED, Sink/Image, set thumbnail-mode as TRUE");
+              lpbin->video_sink = elem;
+              g_object_set (elem, "thumbnail-mode", TRUE, NULL);
+            }
+          } else
+            GST_DEBUG_OBJECT (lpbin,
+                "gst_lp_bin_bus_cb : GST_MESSAGE_STATE_CHANGED, %s doesn't thumbnail-mode property.",
+                elem_name);
         }
 
         g_free (elem_name);
@@ -359,6 +397,8 @@ gst_lp_bin_init (GstLpBin * lpbin)
 
   lpbin->video_pad = NULL;
   lpbin->audio_pad = NULL;
+
+  lpbin->thumbnail_mode = DEFAULT_THUMBNAIL_MODE;
 }
 
 static void
@@ -412,6 +452,36 @@ gst_lp_bin_handle_message (GstBin * bin, GstMessage * msg)
     GST_BIN_CLASS (parent_class)->handle_message (bin, msg);
 }
 
+static GstBuffer *
+gst_lp_bin_retrieve_thumbnail (GstLpBin * lpbin, gint width, gint height,
+    gchar * format)
+{
+  GST_DEBUG_OBJECT (lpbin,
+      "retrieve_thumbnail : width = %d, height = %d, format = %s", width,
+      height, format);
+  GstBuffer *result = NULL;
+  GstCaps *caps;
+
+  if (!lpbin->video_sink) {
+    GST_DEBUG_OBJECT (lpbin, "no video sink");
+    return NULL;
+  }
+
+  caps = gst_caps_new_simple ("video/x-raw",
+      "width", G_TYPE_INT, width,
+      "height", G_TYPE_INT, height,
+      "format", G_TYPE_STRING, format,
+      "pixel-aspect-ratio", GST_TYPE_FRACTION, 1, 1, NULL);
+
+  GST_DEBUG_OBJECT (lpbin, "retrieve_thumbnail : video_sink name = %s",
+      gst_element_get_name (lpbin->video_sink));
+  g_signal_emit_by_name (G_OBJECT (lpbin->video_sink), "convert-sample", caps,
+      &result);
+  GST_DEBUG_OBJECT (lpbin, "retrieve_thumbnail : result = %p", result);
+  gst_caps_unref (caps);
+  return result;
+}
+
 static void
 gst_lp_bin_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec)
@@ -441,6 +511,9 @@ gst_lp_bin_set_property (GObject * object, guint prop_id,
     case PROP_AUDIO_SINK:
       gst_lp_bin_set_sink (lpbin, &lpbin->audio_sink, "audio",
           g_value_get_object (value));
+      break;
+    case PROP_THUMBNAIL_MODE:
+      lpbin->thumbnail_mode = g_value_get_boolean (value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -526,6 +599,9 @@ gst_lp_bin_get_property (GObject * object, guint prop_id, GValue * value,
       GST_LP_BIN_UNLOCK (lpbin);
       break;
     }
+    case PROP_THUMBNAIL_MODE:
+      g_value_set_boolean (value, lpbin->thumbnail_mode);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -650,6 +726,14 @@ unknown_type_cb (GstElement * decodebin, GstPad * pad, GstCaps * caps,
   // TODO
 }
 
+static void
+gst_lp_bin_set_thumbnail_mode (GstLpBin * lpbin, gboolean thumbnail_mode)
+{
+  GST_DEBUG_OBJECT (lpbin, "set thumbnail mode to lpsink as %d",
+      thumbnail_mode);
+  gst_lp_sink_set_thumbnail_mode (lpbin->lpsink, thumbnail_mode);
+}
+
 static gboolean
 gst_lp_bin_setup_element (GstLpBin * lpbin)
 {
@@ -696,6 +780,11 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
   gst_bin_add (GST_BIN_CAST (lpbin), lpbin->fcbin);
 
   lpbin->lpsink = gst_element_factory_make ("lpsink", NULL);
+  if (lpbin->lpsink && lpbin->thumbnail_mode) {
+    GST_DEBUG_OBJECT (lpbin,
+        "setup_element : set lpsink thumbnail-mode as TRUE");
+    gst_lp_bin_set_thumbnail_mode (lpbin, lpbin->thumbnail_mode);
+  }
   gst_bin_add (GST_BIN_CAST (lpbin), lpbin->lpsink);
 
   g_object_unref (fd_caps);

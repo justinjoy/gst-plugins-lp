@@ -49,6 +49,8 @@ struct _GstLpSink
   GstPad *video_pad;
 
   GstFlowReturn ret;
+
+  gboolean thumbnail_mode;
 };
 
 struct _GstLpSinkClass
@@ -70,6 +72,8 @@ GType gst_lp_sink_get_type (void);
 void gst_lp_sink_set_sink (GstLpSink * lpsink, GstLpSinkType type,
     GstElement * sink);
 GstElement *gst_lp_sink_get_sink (GstLpSink * lpsink, GstLpSinkType type);
+void gst_lp_sink_set_thumbnail_mode (GstLpSink * lpsink,
+    gboolean thumbnail_mode);
 
 G_END_DECLS
 #endif // __GST_LP_SINK_H__

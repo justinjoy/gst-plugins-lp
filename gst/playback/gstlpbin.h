@@ -82,6 +82,8 @@ struct _GstLpBin
   GMutex elements_lock;
   guint32 elements_cookie;
   GList *elements;              /* factories we can use for selecting elements */
+
+  gboolean thumbnail_mode;
 };
 
 struct _GstLpBinClass
@@ -99,6 +101,10 @@ struct _GstLpBinClass
   /* signal fired to get a list of factories to try to autoplug */
   GValueArray *(*autoplug_factories) (GstElement * element, GstPad * pad,
       GstCaps * caps);
+
+  /* get the thumbnail image */
+  GstBuffer *(*retrieve_thumbnail) (GstLpBin * lpbin, gint width, gint height,
+      gchar * format);
 };
 
 GType gst_lp_bin_get_type (void);
