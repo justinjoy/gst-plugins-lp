@@ -61,7 +61,8 @@ G_BEGIN_DECLS
       	"audio/AMR-WB;" \
       	"audio/x-flac;" \
       	"audio/x-mulaw;" \
-      	"audio/x-alaw"
+      	"audio/x-alaw" \
+      	"audio/x-private1-dts"
 
 
 G_END_DECLS
