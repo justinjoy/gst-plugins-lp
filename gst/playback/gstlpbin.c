@@ -831,6 +831,11 @@ gst_lp_bin_change_state (GstElement * element, GstStateChange transition)
     case GST_STATE_CHANGE_READY_TO_PAUSED:
 //      gst_lp_bin_make_link(lpbin);
       break;
+    case GST_STATE_CHANGE_READY_TO_NULL:
+      if (lpbin->audio_sink)
+        gst_element_set_state (lpbin->audio_sink, GST_STATE_NULL);
+      if (lpbin->video_sink)
+        gst_element_set_state (lpbin->video_sink, GST_STATE_NULL);
     default:
       break;
   }
@@ -846,9 +851,9 @@ gst_lp_bin_change_state (GstElement * element, GstStateChange transition)
       gst_lp_bin_deactive_signal_handler (lpbin);
 
       if (lpbin->audio_sink)
-        gst_element_set_state (lpbin->audio_sink, GST_STATE_NULL);
+        lpbin->audio_sink = NULL;
       if (lpbin->video_sink)
-        gst_element_set_state (lpbin->video_sink, GST_STATE_NULL);
+        lpbin->video_sink = NULL;
       break;
     }
     default:
