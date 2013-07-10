@@ -54,6 +54,7 @@ enum
   SIGNAL_SOURCE_SETUP,
   SIGNAL_AUTOPLUG_CONTINUE,
   SIGNAL_AUTOPLUG_FACTORIES,
+  SIGNAL_CAPS_VIDEO,
   LAST_SIGNAL
 };
 
@@ -115,6 +116,7 @@ static GstBuffer *gst_lp_bin_retrieve_thumbnail (GstLpBin * lpbin, gint width,
     gint height, gchar * format);
 static void gst_lp_bin_set_thumbnail_mode (GstLpBin * lpbin,
     gboolean thumbnail_mode);
+static GstStructure *gst_lp_bin_caps_video (GstLpBin * lpbin);
 
 static GstElementClass *parent_class;
 
@@ -271,8 +273,6 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
       g_signal_new ("source-setup", G_TYPE_FROM_CLASS (klass),
       G_SIGNAL_RUN_LAST, 0, NULL, NULL,
       g_cclosure_marshal_generic, G_TYPE_NONE, 1, GST_TYPE_ELEMENT);
-  gstelement_klass->change_state = GST_DEBUG_FUNCPTR (gst_lp_bin_change_state);
-  gstelement_klass->query = GST_DEBUG_FUNCPTR (gst_lp_bin_query);
 
   gst_lp_bin_signals[SIGNAL_AUTOPLUG_CONTINUE] =
       g_signal_new ("autoplug-continue", G_TYPE_FROM_CLASS (klass),
@@ -288,11 +288,21 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
       g_cclosure_marshal_generic, G_TYPE_VALUE_ARRAY, 2,
       GST_TYPE_PAD, GST_TYPE_CAPS);
 
+  gst_lp_bin_signals[SIGNAL_CAPS_VIDEO] =
+      g_signal_new ("caps-video", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST, G_STRUCT_OFFSET (GstLpBinClass,
+          caps_video), NULL, NULL,
+      g_cclosure_marshal_generic, GST_TYPE_STRUCTURE, 0, G_TYPE_NONE);
+
+  gstelement_klass->change_state = GST_DEBUG_FUNCPTR (gst_lp_bin_change_state);
+  gstelement_klass->query = GST_DEBUG_FUNCPTR (gst_lp_bin_query);
+
   gstbin_klass->handle_message = GST_DEBUG_FUNCPTR (gst_lp_bin_handle_message);
 
   klass->autoplug_continue = GST_DEBUG_FUNCPTR (gst_lp_bin_autoplug_continue);
   klass->autoplug_factories = GST_DEBUG_FUNCPTR (gst_lp_bin_autoplug_factories);
   klass->retrieve_thumbnail = GST_DEBUG_FUNCPTR (gst_lp_bin_retrieve_thumbnail);
+  klass->caps_video = GST_DEBUG_FUNCPTR (gst_lp_bin_caps_video);
 }
 
 static gboolean
@@ -388,6 +398,11 @@ gst_lp_bin_init (GstLpBin * lpbin)
         lpbin);
     gst_object_unref (lpbin->bus);
   }
+
+  lpbin->caps_video_id =
+      g_signal_connect (lpbin, "caps-video", G_CALLBACK (gst_lp_bin_caps_video),
+      lpbin);
+
   g_rec_mutex_init (&lpbin->lock);
 
   /* first filter out the interesting element factories */
@@ -834,6 +849,7 @@ gst_lp_bin_deactive_signal_handler (GstLpBin * lpbin)
   REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->unknown_type_id);
   REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->autoplug_factories_id);
   REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->autoplug_continue_id);
+  REMOVE_SIGNAL (lpbin, lpbin->caps_video_id);
 }
 
 static GstStateChangeReturn
@@ -1254,5 +1270,34 @@ gst_lp_bin_autoplug_factories (GstElement * element, GstPad * pad,
   }
   gst_plugin_feature_list_free (mylist);
 
+  return result;
+}
+
+static GstStructure *
+gst_lp_bin_caps_video (GstLpBin * lpbin)
+{
+  GstStructure *result;
+  GstPad *sinkpad;
+  GstCaps *caps;
+
+  //TODO At future, video_sink will be used instead of video_pad.
+  if (!lpbin->video_pad)
+    goto end;
+
+  caps = gst_pad_get_current_caps (lpbin->video_pad);
+  GST_DEBUG_OBJECT (lpbin, "video pad caps are %" GST_PTR_FORMAT, caps);
+
+  if (!caps) {
+    gst_object_unref (sinkpad);
+    goto end;
+  }
+
+  result = gst_caps_get_structure (caps, 0);
+  GST_DEBUG_OBJECT (lpbin, "video pad caps structure is %" GST_PTR_FORMAT,
+      result);
+
+  gst_caps_unref (caps);
+
+end:
   return result;
 }

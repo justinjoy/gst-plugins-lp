@@ -68,6 +68,7 @@ struct _GstLpBin
   gulong unknown_type_id;
   gulong autoplug_factories_id;
   gulong autoplug_continue_id;
+  gulong caps_video_id;
 
   guint naudio;
   guint nvideo;
@@ -106,6 +107,9 @@ struct _GstLpBinClass
   /* get the thumbnail image */
   GstBuffer *(*retrieve_thumbnail) (GstLpBin * lpbin, gint width, gint height,
       gchar * format);
+
+  /* get the caps of video sink element's sinkpad */
+  GstStructure *(*caps_video) (GstLpBin * lpbin);
 };
 
 GType gst_lp_bin_get_type (void);
