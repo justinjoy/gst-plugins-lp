@@ -1277,7 +1277,6 @@ static GstStructure *
 gst_lp_bin_caps_video (GstLpBin * lpbin)
 {
   GstStructure *result;
-  GstPad *sinkpad;
   GstCaps *caps;
 
   //TODO At future, video_sink will be used instead of video_pad.
@@ -1285,12 +1284,12 @@ gst_lp_bin_caps_video (GstLpBin * lpbin)
     goto end;
 
   caps = gst_pad_get_current_caps (lpbin->video_pad);
-  GST_DEBUG_OBJECT (lpbin, "video pad caps are %" GST_PTR_FORMAT, caps);
 
   if (!caps) {
-    gst_object_unref (sinkpad);
+    GST_WARNING_OBJECT (lpbin, "video pad caps is not exist");
     goto end;
   }
+  GST_DEBUG_OBJECT (lpbin, "video pad caps are %" GST_PTR_FORMAT, caps);
 
   result = gst_caps_get_structure (caps, 0);
   GST_DEBUG_OBJECT (lpbin, "video pad caps structure is %" GST_PTR_FORMAT,
