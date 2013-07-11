@@ -43,6 +43,7 @@ enum
   PROP_AUDIO_SINK,
   PROP_VIDEO_SINK,
   PROP_THUMBNAIL_MODE,
+  PROP_USE_BUFFERING,
   PROP_LAST
 };
 
@@ -57,6 +58,7 @@ enum
 };
 
 #define DEFAULT_THUMBNAIL_MODE FALSE
+#define DEFAULT_USE_BUFFERING FALSE
 
 /* GstObject overriding */
 static void gst_lp_bin_class_init (GstLpBinClass * klass);
@@ -247,6 +249,11 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
           "Thumbnail mode", DEFAULT_THUMBNAIL_MODE,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  g_object_class_install_property (gobject_klass, PROP_USE_BUFFERING,
+      g_param_spec_boolean ("use-buffering", "Use buffering",
+          "set use-buffering property at multiqueue", DEFAULT_USE_BUFFERING,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
   gst_lp_bin_signals[SIGNAL_ABOUT_TO_FINISH] =
       g_signal_new ("about-to-finish", G_TYPE_FROM_CLASS (klass),
       G_SIGNAL_RUN_LAST,
@@ -399,6 +406,7 @@ gst_lp_bin_init (GstLpBin * lpbin)
   lpbin->audio_pad = NULL;
 
   lpbin->thumbnail_mode = DEFAULT_THUMBNAIL_MODE;
+  lpbin->use_buffering = DEFAULT_USE_BUFFERING;
 }
 
 static void
@@ -515,6 +523,9 @@ gst_lp_bin_set_property (GObject * object, guint prop_id,
     case PROP_THUMBNAIL_MODE:
       lpbin->thumbnail_mode = g_value_get_boolean (value);
       break;
+    case PROP_USE_BUFFERING:
+      lpbin->use_buffering = g_value_get_boolean (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
   }
@@ -601,6 +612,9 @@ gst_lp_bin_get_property (GObject * object, guint prop_id, GValue * value,
     }
     case PROP_THUMBNAIL_MODE:
       g_value_set_boolean (value, lpbin->thumbnail_mode);
+      break;
+    case PROP_USE_BUFFERING:
+      g_value_set_boolean (value, lpbin->use_buffering);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -742,7 +756,13 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
   fd_caps = gst_caps_from_string ("video/x-fd; audio/x-fd");
 
   lpbin->uridecodebin = gst_element_factory_make ("uridecodebin", NULL);
-  g_object_set (lpbin->uridecodebin, "caps", fd_caps, "uri", lpbin->uri, NULL);
+
+  g_object_set (lpbin->uridecodebin,
+      "caps", fd_caps, "uri", lpbin->uri, NULL);
+
+  if(lpbin->use_buffering)
+     g_object_set (lpbin->uridecodebin, "use-buffering", TRUE, NULL);
+
   lpbin->pad_added_id = g_signal_connect (lpbin->uridecodebin, "pad-added",
       G_CALLBACK (pad_added_cb), lpbin);
   lpbin->no_more_pads_id =

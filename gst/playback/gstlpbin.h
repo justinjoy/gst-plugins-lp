@@ -84,6 +84,7 @@ struct _GstLpBin
   GList *elements;              /* factories we can use for selecting elements */
 
   gboolean thumbnail_mode;
+  gboolean use_buffering;
 };
 
 struct _GstLpBinClass
