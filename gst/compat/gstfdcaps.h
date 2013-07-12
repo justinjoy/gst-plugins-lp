@@ -1,6 +1,6 @@
 /* GStreamer Lightweight Playback Plugins
  * Copyright (C) 2013 LG Electronics.
- *	Author : Justin Joy <justin.joy.9to5@gmail.com> 
+ *  Author : Jeongseok Kim <jeongseok.kim@lge.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -24,45 +24,46 @@
 G_BEGIN_DECLS
 
 #define FD_VIDEO_CAPS \
-        "video/x-divx;" \
-        "video/x-h264;" \
-        "video/x-intel-h263;" \
-        "video/x-h263;" \
-        "video/mpeg;" \
-        "video/x-wmv;" \
-        "video/x-msmpeg;" \
-        "video/x-pn-realvideo;" \
-        "video/x-pn-realvideo;" \
-        "video/x-svq;" \
-        "video/x-ffv;" \
-        "video/x-3ivx;" \
-        "video/x-vp8;" \
-        "video/x-xvid;" \
-        "video/x-flash-video"
+    "video/x-divx;" \
+    "video/x-h264;" \
+    "video/x-intel-h263;" \
+    "video/x-h263;" \
+    "video/mpeg;" \
+    "video/x-wmv;" \
+    "video/x-msmpeg;" \
+    "video/x-pn-realvideo;" \
+    "video/x-pn-realvideo;" \
+    "video/x-svq;" \
+    "video/x-ffv;" \
+    "video/x-3ivx;" \
+    "video/x-vp8;" \
+    "video/x-xvid;" \
+    "video/x-flash-video;" \
+    "video/x-raw"
 
 
 #define FD_AUDIO_CAPS \
-      	"audio/mpeg;"	\
-	      "audio/x-dts;" \
-	      "audio/x-ac3;" \
-      	"audio/x-eac3;" \
-      	"audio/x-private1-ac3;" \
-	      "audio/x-wma;" \
-      	"audio/x-pn-realaudio;" \
-	      "audio/x-raw;" \
-	      "audio/x-lpcm-1;" \
-	      "audio/x-lpcm;" \
-      	"audio/x-private-lg-lpcm;" \
-      	"audio/x-private1-lpcm;" \
-      	"audio/x-private-ts-lpcm;" \
-	      "audio/x-adpcm;" \
-      	"audio/x-vorbis;" \
-      	"audio/AMR;" \
-      	"audio/AMR-WB;" \
-      	"audio/x-flac;" \
-      	"audio/x-mulaw;" \
-      	"audio/x-alaw" \
-      	"audio/x-private1-dts"
+    "audio/mpeg;"\
+    "audio/x-dts;" \
+    "audio/x-ac3;" \
+    "audio/x-eac3;" \
+    "audio/x-private1-ac3;" \
+    "audio/x-wma;" \
+    "audio/x-pn-realaudio;" \
+    "audio/x-raw;" \
+    "audio/x-lpcm-1;" \
+    "audio/x-lpcm;" \
+    "audio/x-private-lg-lpcm;" \
+    "audio/x-private1-lpcm;" \
+    "audio/x-private-ts-lpcm;" \
+    "audio/x-adpcm;" \
+    "audio/x-vorbis;" \
+    "audio/AMR;" \
+    "audio/AMR-WB;" \
+    "audio/x-flac;" \
+    "audio/x-mulaw;" \
+    "audio/x-alaw" \
+    "audio/x-private1-dts"
 
 
 G_END_DECLS
