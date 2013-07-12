@@ -111,7 +111,7 @@ static gboolean gst_lp_bin_autoplug_continue (GstElement * element,
     GstPad * pad, GstCaps * caps);
 static GValueArray *gst_lp_bin_autoplug_factories (GstElement * element,
     GstPad * pad, GstCaps * caps);
-static void gst_lp_bin_deactive_signal_handler (GstLpBin * lpbin);
+static void gst_lp_bin_deactive (GstLpBin * lpbin);
 static GstBuffer *gst_lp_bin_retrieve_thumbnail (GstLpBin * lpbin, gint width,
     gint height, gchar * format);
 static void gst_lp_bin_set_thumbnail_mode (GstLpBin * lpbin,
@@ -433,6 +433,12 @@ gst_lp_bin_finalize (GObject * obj)
 
   if (lpbin->source)
     gst_object_unref (lpbin->source);
+
+  if (lpbin->video_pad)
+    gst_object_unref (lpbin->video_pad);
+
+  if (lpbin->audio_pad)
+    gst_object_unref (lpbin->audio_pad);
 
   if (lpbin->video_sink) {
     gst_element_set_state (lpbin->video_sink, GST_STATE_NULL);
@@ -772,11 +778,10 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
 
   lpbin->uridecodebin = gst_element_factory_make ("uridecodebin", NULL);
 
-  g_object_set (lpbin->uridecodebin,
-      "caps", fd_caps, "uri", lpbin->uri, NULL);
+  g_object_set (lpbin->uridecodebin, "caps", fd_caps, "uri", lpbin->uri, NULL);
 
-  if(lpbin->use_buffering)
-     g_object_set (lpbin->uridecodebin, "use-buffering", TRUE, NULL);
+  if (lpbin->use_buffering)
+    g_object_set (lpbin->uridecodebin, "use-buffering", TRUE, NULL);
 
   lpbin->pad_added_id = g_signal_connect (lpbin->uridecodebin, "pad-added",
       G_CALLBACK (pad_added_cb), lpbin);
@@ -837,9 +842,45 @@ gst_lp_bin_make_link (GstLpBin * lpbin)
 }
 
 static void
-gst_lp_bin_deactive_signal_handler (GstLpBin * lpbin)
+gst_lp_bin_deactive (GstLpBin * lpbin)
 {
-  GST_DEBUG_OBJECT (lpbin, "deactive_signal_handler");
+  GST_DEBUG_OBJECT (lpbin, "deactive");
+
+  GstPad *lpsink_sinkpad;
+
+  if (lpbin->video_pad) {
+    //gst_object_unref (lpbin->video_pad);
+    lpbin->video_pad = NULL;
+  }
+
+  if (lpbin->audio_pad) {
+    //gst_object_unref (lpbin->audio_pad);
+    lpbin->audio_pad = NULL;
+  }
+
+  if (lpbin->fcbin) {
+    gst_element_set_state (GST_ELEMENT_CAST (lpbin->fcbin), GST_STATE_NULL);
+    gst_bin_remove (GST_BIN_CAST (lpbin), lpbin->fcbin);
+    //gst_object_unref (lpbin->fcbin);
+    lpbin->fcbin = NULL;
+  }
+
+  if (lpbin->audio_sink) {
+    gst_element_set_state (lpbin->audio_sink, GST_STATE_NULL);
+    lpbin->audio_sink = NULL;
+  }
+
+  if (lpbin->video_sink) {
+    gst_element_set_state (lpbin->video_sink, GST_STATE_NULL);
+    lpbin->video_sink = NULL;
+  }
+
+  if (lpbin->lpsink) {
+    gst_element_set_state (GST_ELEMENT_CAST (lpbin->lpsink), GST_STATE_NULL);
+    gst_bin_remove (GST_BIN_CAST (lpbin), lpbin->lpsink);
+    //gst_object_unref (lpbin->lpsink);
+    lpbin->lpsink = NULL;
+  }
   REMOVE_SIGNAL (lpbin->bus, lpbin->bus_msg_cb_id);
   REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->pad_added_id);
   REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->pad_removed_id);
@@ -850,6 +891,12 @@ gst_lp_bin_deactive_signal_handler (GstLpBin * lpbin)
   REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->autoplug_factories_id);
   REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->autoplug_continue_id);
   REMOVE_SIGNAL (lpbin, lpbin->caps_video_id);
+  if (lpbin->uridecodebin) {
+    gst_element_set_state (lpbin->uridecodebin, GST_STATE_NULL);
+    gst_bin_remove (GST_BIN_CAST (lpbin), lpbin->uridecodebin);
+    //gst_object_unref (lpbin->uridecodebin);
+    lpbin->uridecodebin = NULL;
+  }
 }
 
 static GstStateChangeReturn
@@ -867,11 +914,6 @@ gst_lp_bin_change_state (GstElement * element, GstStateChange transition)
     case GST_STATE_CHANGE_READY_TO_PAUSED:
 //      gst_lp_bin_make_link(lpbin);
       break;
-    case GST_STATE_CHANGE_READY_TO_NULL:
-      if (lpbin->audio_sink)
-        gst_element_set_state (lpbin->audio_sink, GST_STATE_NULL);
-      if (lpbin->video_sink)
-        gst_element_set_state (lpbin->video_sink, GST_STATE_NULL);
     default:
       break;
   }
@@ -884,12 +926,7 @@ gst_lp_bin_change_state (GstElement * element, GstStateChange transition)
   switch (transition) {
     case GST_STATE_CHANGE_READY_TO_NULL:
     {
-      gst_lp_bin_deactive_signal_handler (lpbin);
-
-      if (lpbin->audio_sink)
-        lpbin->audio_sink = NULL;
-      if (lpbin->video_sink)
-        lpbin->video_sink = NULL;
+      gst_lp_bin_deactive (lpbin);
       break;
     }
     default:

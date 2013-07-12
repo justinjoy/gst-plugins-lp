@@ -64,6 +64,8 @@ static void gst_fc_bin_get_property (GObject * object, guint prop_id,
 static GstPad *gst_fc_bin_request_new_pad (GstElement * element,
     GstPadTemplate * templ, const gchar * name, const GstCaps * caps);
 static gboolean array_has_value (const gchar * values[], const gchar * value);
+static GstStateChangeReturn gst_fc_bin_change_state (GstElement * element,
+    GstStateChange transition);
 
 static GstStaticPadTemplate gst_fc_bin_sink_pad_template =
 GST_STATIC_PAD_TEMPLATE ("sink%u", GST_PAD_SINK,
@@ -204,7 +206,7 @@ gst_fc_bin_class_init (GstFCBinClass * klass)
           "Currently playing text stream (-1 = auto)",
           -1, G_MAXINT, -1, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
-  //element_class->change_state = GST_DEBUG_FUNCPTR (gst_fc_bin_change_state);
+  element_class->change_state = GST_DEBUG_FUNCPTR (gst_fc_bin_change_state);
   element_class->request_new_pad =
       GST_DEBUG_FUNCPTR (gst_fc_bin_request_new_pad);
 
@@ -691,6 +693,51 @@ gst_fc_bin_release_pad (GstElement * element, GstPad *pad)
 	
 }
 */
+
+void
+gst_fc_bin_release_pad (GstFCBin * fcbin, GstPad * pad)
+{
+  GstPad **res = NULL;
+  GstFCSelect *select;
+  GstPad *sinkpad;
+  GstPad *srcpad;
+
+  GST_DEBUG_OBJECT (fcbin, "release pad %" GST_PTR_FORMAT, pad);
+
+  GST_FC_BIN_LOCK (fcbin);
+
+  sinkpad = gst_ghost_pad_get_target (GST_GHOST_PAD_CAST (pad));
+  select = g_object_get_data (G_OBJECT (sinkpad), "fcbin.select");
+  srcpad = g_object_get_data (G_OBJECT (pad), "fcbin.srcpad");
+
+  gst_element_release_request_pad (select->selector, sinkpad);
+  gst_object_unref (sinkpad);
+
+  res = &pad;
+
+  if (pad) {
+    GST_DEBUG_OBJECT (fcbin, "deactivate pad %" GST_PTR_FORMAT, *res);
+    gst_pad_set_active (*res, FALSE);
+    gst_element_remove_pad (GST_ELEMENT_CAST (fcbin), *res);
+    *res = NULL;
+  }
+
+  if (srcpad) {
+    gst_pad_set_active (srcpad, FALSE);
+    gst_ghost_pad_set_target (GST_GHOST_PAD_CAST (srcpad), NULL);
+    gst_element_remove_pad (GST_ELEMENT_CAST (fcbin), srcpad);
+    srcpad = NULL;
+  }
+
+  if (select->selector) {
+    gst_element_set_state (select->selector, GST_STATE_NULL);
+    gst_bin_remove (GST_BIN_CAST (fcbin), select->selector);
+    select->selector = NULL;
+  }
+
+  GST_FC_BIN_UNLOCK (fcbin);
+}
+
 static gboolean
 array_has_value (const gchar * values[], const gchar * value)
 {
@@ -701,4 +748,78 @@ array_has_value (const gchar * values[], const gchar * value)
       return TRUE;
   }
   return FALSE;
+}
+
+static GstStateChangeReturn
+gst_fc_bin_change_state (GstElement * element, GstStateChange transition)
+{
+  GstStateChangeReturn ret;
+  GstFCBin *fcbin;
+
+  fcbin = GST_FC_BIN (element);
+
+  switch (transition) {
+    case GST_STATE_CHANGE_NULL_TO_READY:
+      break;
+    case GST_STATE_CHANGE_READY_TO_PAUSED:
+      break;
+    case GST_STATE_CHANGE_READY_TO_NULL:
+      break;
+    default:
+      break;
+  }
+
+  ret = GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
+
+  if (ret == GST_STATE_CHANGE_FAILURE)
+    goto failure;
+
+  switch (transition) {
+    case GST_STATE_CHANGE_READY_TO_NULL:
+    {
+      GstIterator *it;
+      GstPad *fcbin_sinkpad;
+      gboolean done = FALSE;
+      GValue item = { 0, };
+      gchar *fcbin_sinkpad_name;
+
+      GST_FC_BIN_LOCK (fcbin);
+      it = gst_element_iterate_sink_pads (fcbin);
+
+      while (!done) {
+        switch (gst_iterator_next (it, &item)) {
+          case GST_ITERATOR_OK:
+            fcbin_sinkpad = g_value_get_object (&item);
+            fcbin_sinkpad_name = GST_PAD_NAME (fcbin_sinkpad);
+            gst_fc_bin_release_pad (fcbin, fcbin_sinkpad);
+            g_value_reset (&item);
+            break;
+          case GST_ITERATOR_RESYNC:
+            gst_iterator_resync (it);
+            break;
+          case GST_ITERATOR_ERROR:
+            done = TRUE;
+            break;
+          case GST_ITERATOR_DONE:
+            done = TRUE;
+            break;
+        }
+      }
+      g_free (fcbin_sinkpad_name);
+      g_value_unset (&item);
+      gst_iterator_free (it);
+      GST_FC_BIN_UNLOCK (fcbin);
+      break;
+    }
+    default:
+      break;
+  }
+  return ret;
+
+  /* ERRORS */
+failure:
+  {
+    return ret;
+  }
+
 }

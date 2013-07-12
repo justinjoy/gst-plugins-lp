@@ -186,6 +186,16 @@ gst_lp_sink_dispose (GObject * obj)
     lpsink->video_sink = NULL;
   }
 
+  if (lpsink->audio_pad) {
+    gst_object_unref (lpsink->audio_pad);
+    lpsink->audio_pad = NULL;
+  }
+
+  if (lpsink->video_pad) {
+    gst_object_unref (lpsink->video_pad);
+    lpsink->video_pad = NULL;
+  }
+
   G_OBJECT_CLASS (parent_class)->dispose (obj);
 }
 
@@ -207,9 +217,15 @@ gst_lp_sink_finalize (GObject * obj)
     lpsink->video_sink = NULL;
   }
 
-  lpsink->video_pad = NULL;
-  lpsink->audio_pad = NULL;
+  if (lpsink->audio_pad) {
+    gst_object_unref (lpsink->audio_pad);
+    lpsink->audio_pad = NULL;
+  }
 
+  if (lpsink->video_pad) {
+    gst_object_unref (lpsink->video_pad);
+    lpsink->video_pad = NULL;
+  }
   G_OBJECT_CLASS (parent_class)->finalize (obj);
 }
 
@@ -328,16 +344,27 @@ void
 gst_lp_sink_release_pad (GstLpSink * lpsink, GstPad * pad)
 {
   GstPad **res = NULL;
+  gboolean untarget = TRUE;
 
   GST_DEBUG_OBJECT (lpsink, "release pad %" GST_PTR_FORMAT, pad);
 
   GST_LP_SINK_LOCK (lpsink);
+  if (pad == lpsink->video_pad) {
+    res = &lpsink->video_pad;
+  } else if (pad == lpsink->audio_pad) {
+    res = &lpsink->audio_pad;
+  } else {
+    res = &pad;
+    untarget = FALSE;
+  }
 
   GST_LP_SINK_UNLOCK (lpsink);
   if (*res) {
     GST_DEBUG_OBJECT (lpsink, "deactivate pad %" GST_PTR_FORMAT, *res);
     // TODO
-    gst_ghost_pad_set_target (GST_GHOST_PAD_CAST (*res), NULL);
+    gst_pad_set_active (*res, FALSE);
+    if (untarget)
+      gst_ghost_pad_set_target (GST_GHOST_PAD_CAST (*res), NULL);
     GST_DEBUG_OBJECT (lpsink, "remove pad %" GST_PTR_FORMAT, *res);
     gst_element_remove_pad (GST_ELEMENT_CAST (lpsink), *res);
     *res = NULL;
@@ -497,10 +524,8 @@ gst_lp_sink_change_state (GstElement * element, GstStateChange transition)
     case GST_STATE_CHANGE_READY_TO_PAUSED:
       break;
     case GST_STATE_CHANGE_READY_TO_NULL:
-      if (lpsink->audio_pad != NULL)
-        gst_ghost_pad_set_target (GST_GHOST_PAD_CAST (lpsink->audio_pad), NULL);
-      if (lpsink->video_pad != NULL)
-        gst_ghost_pad_set_target (GST_GHOST_PAD_CAST (lpsink->video_pad), NULL);
+      gst_lp_sink_release_pad (lpsink, lpsink->audio_pad);
+      gst_lp_sink_release_pad (lpsink, lpsink->video_pad);
       if (lpsink->audio_sink != NULL) {
         gst_element_set_state (lpsink->audio_sink, GST_STATE_NULL);
         gst_bin_remove (GST_BIN_CAST (lpsink), lpsink->audio_sink);
