@@ -64,8 +64,8 @@ static void gst_fc_bin_get_property (GObject * object, guint prop_id,
 static GstPad *gst_fc_bin_request_new_pad (GstElement * element,
     GstPadTemplate * templ, const gchar * name, const GstCaps * caps);
 static gboolean array_has_value (const gchar * values[], const gchar * value);
-static GstStateChangeReturn gst_fc_bin_change_state (GstElement * element,
-    GstStateChange transition);
+/*static GstStateChangeReturn gst_fc_bin_change_state (GstElement * element,
+    GstStateChange transition);*/
 
 static GstStaticPadTemplate gst_fc_bin_sink_pad_template =
 GST_STATIC_PAD_TEMPLATE ("sink%u", GST_PAD_SINK,
@@ -206,7 +206,7 @@ gst_fc_bin_class_init (GstFCBinClass * klass)
           "Currently playing text stream (-1 = auto)",
           -1, G_MAXINT, -1, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
-  element_class->change_state = GST_DEBUG_FUNCPTR (gst_fc_bin_change_state);
+  //element_class->change_state = GST_DEBUG_FUNCPTR (gst_fc_bin_change_state);
   element_class->request_new_pad =
       GST_DEBUG_FUNCPTR (gst_fc_bin_request_new_pad);
 
@@ -749,7 +749,7 @@ array_has_value (const gchar * values[], const gchar * value)
   }
   return FALSE;
 }
-
+/*
 static GstStateChangeReturn
 gst_fc_bin_change_state (GstElement * element, GstStateChange transition)
 {
@@ -814,12 +814,13 @@ gst_fc_bin_change_state (GstElement * element, GstStateChange transition)
     default:
       break;
   }
-  return ret;
+  return ret;*/
 
   /* ERRORS */
-failure:
+/*failure:
   {
     return ret;
   }
 
 }
+*/
