@@ -343,11 +343,12 @@ gst_lp_bin_bus_cb (GstBus * bus, GstMessage * message, gpointer data)
 
           if (g_object_class_find_property (G_OBJECT_GET_CLASS (elem),
                   "thumbnail-mode"))
-            g_object_set (elem, "thumbnail-mode", TRUE, NULL);
+            g_object_set (elem, "thumbnail-mode", lpbin->thumbnail_mode, NULL);
           else
             GST_WARNING_OBJECT (lpbin,
                 "gst_lp_bin_bus_cb : GST_MESSAGE_STATE_CHANGED, %s doesn't thumbnail-mode property.",
                 elem_name);
+
         } else if (strstr (klass, "Parse")) {
           gchar *elem_name = gst_element_get_name (elem);
           GST_DEBUG_OBJECT (lpbin,
