@@ -505,7 +505,7 @@ gst_lp_bin_retrieve_thumbnail (GstLpBin * lpbin, gint width, gint height,
 
   GST_DEBUG_OBJECT (lpbin, "retrieve_thumbnail : video_sink name = %s",
       gst_element_get_name (lpbin->video_sink));
-  g_signal_emit_by_name (G_OBJECT (lpbin->video_sink), "convert-sample", caps,
+  g_signal_emit_by_name (G_OBJECT (lpbin->video_sink), "convert-frame", caps,
       &result);
   GST_DEBUG_OBJECT (lpbin, "retrieve_thumbnail : result = %p", result);
   gst_caps_unref (caps);
@@ -867,12 +867,12 @@ gst_lp_bin_deactive (GstLpBin * lpbin)
   }
 
   if (lpbin->audio_sink) {
-    gst_element_set_state (lpbin->audio_sink, GST_STATE_NULL);
+//    gst_element_set_state (lpbin->audio_sink, GST_STATE_NULL);
     lpbin->audio_sink = NULL;
   }
 
   if (lpbin->video_sink) {
-    gst_element_set_state (lpbin->video_sink, GST_STATE_NULL);
+//    gst_element_set_state (lpbin->video_sink, GST_STATE_NULL);
     lpbin->video_sink = NULL;
   }
 
