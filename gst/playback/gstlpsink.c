@@ -1,6 +1,8 @@
 /* GStreamer Lightweight Playback Plugins
  * Copyright (C) 2013 LG Electronics.
- *	Author : Justin Joy <justin.joy.9to5@gmail.com> 
+ *	Author : Jeongseok Kim <jeongseok.kim@lge.com>
+ *	         Wonchul Lee <wonchul86.lee@lge.com>
+ *	         Hoonhee Lee <hoonhee.lee@lge.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -111,7 +113,6 @@ gst_lp_sink_class_init (GstLpSinkClass * klass)
    * Set the used video sink element. NULL will use the default sink. playsink
    * must be in %GST_STATE_NULL
    *
-   * Since: 0.10.36
    */
   g_object_class_install_property (gobject_klass, PROP_VIDEO_SINK,
       g_param_spec_object ("video-sink", "Video Sink",
@@ -124,7 +125,6 @@ gst_lp_sink_class_init (GstLpSinkClass * klass)
    * Set the used audio sink element. NULL will use the default sink. playsink
    * must be in %GST_STATE_NULL
    *
-   * Since: 0.10.36
    */
   g_object_class_install_property (gobject_klass, PROP_AUDIO_SINK,
       g_param_spec_object ("audio-sink", "Audio Sink",
@@ -140,7 +140,7 @@ gst_lp_sink_class_init (GstLpSinkClass * klass)
   gst_element_class_set_static_metadata (gstelement_klass,
       "Lightweight Player Sink", "Lightweight/Bin/Sink",
       "Convenience sink for multiple streams in a restricted system",
-      "Justin Joy <justin.joy.9to5@gmail.com>");
+      "Jeongseok Kim <jeongseok.kim@lge.com>");
 
   gstelement_klass->change_state = GST_DEBUG_FUNCPTR (gst_lp_sink_change_state);
 
@@ -151,10 +151,6 @@ gst_lp_sink_class_init (GstLpSinkClass * klass)
       GST_DEBUG_FUNCPTR (gst_lp_sink_release_request_pad);
 
   gstbin_klass->handle_message = GST_DEBUG_FUNCPTR (gst_lp_sink_handle_message);
-
-  // klass->reconfigure = GST_DEBUG_FUNCPTR (gst_lp_sink_reconfigure);
-//  klass->convert_sample = GST_DEBUG_FUNCPTR (gst_lp_sink_convert_sample);
-
 }
 
 static void
@@ -299,7 +295,25 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
   gst_element_add_pad (GST_ELEMENT_CAST (lpsink), res);
 
   sinkpad = gst_element_get_static_pad (sink_element, "sink");
-  gst_ghost_pad_set_target (GST_GHOST_PAD_CAST (res), sinkpad);
+  if (gst_ghost_pad_set_target (GST_GHOST_PAD_CAST (res), sinkpad)) {
+    GST_INFO_OBJECT (sinkpad, "Failed to set target");
+
+    if (type == GST_LP_SINK_TYPE_AUDIO) {
+      gst_object_unref (sinkpad);
+
+      GST_INFO_OBJECT (sinkpad, "A Fakesink will be deployed for audio sink.");
+
+      gst_bin_remove (GST_BIN_CAST (lpsink), sink_element);
+      sink_element = gst_element_factory_make ("fakesink", NULL);
+
+      gst_bin_add (GST_BIN_CAST (lpsink), sink_element);
+      gst_element_set_state (sink_element, GST_STATE_PAUSED);
+      sinkpad = gst_element_get_static_pad (sink_element, "sink");
+      gst_ghost_pad_set_target (GST_GHOST_PAD_CAST (res), sinkpad);
+      lpsink->audio_sink = sink_element;
+    }
+  }
+
   gst_object_unref (sinkpad);
 beach:
 
