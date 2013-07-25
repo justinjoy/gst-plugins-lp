@@ -295,7 +295,7 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
   gst_element_add_pad (GST_ELEMENT_CAST (lpsink), res);
 
   sinkpad = gst_element_get_static_pad (sink_element, "sink");
-  if (gst_ghost_pad_set_target (GST_GHOST_PAD_CAST (res), sinkpad)) {
+  if (gst_ghost_pad_set_target (GST_GHOST_PAD_CAST (res), sinkpad) == FALSE) {
     GST_INFO_OBJECT (sinkpad, "Failed to set target");
 
     if (type == GST_LP_SINK_TYPE_AUDIO) {
