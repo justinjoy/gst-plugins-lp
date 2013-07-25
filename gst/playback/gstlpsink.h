@@ -34,8 +34,29 @@ G_BEGIN_DECLS
 #define GST_LP_SINK_GET_LOCK(bin) (&((GstLpSink*)(bin))->lock)
 #define GST_LP_SINK_LOCK(bin) (g_rec_mutex_lock (GST_LP_SINK_GET_LOCK(bin)))
 #define GST_LP_SINK_UNLOCK(bin) (g_rec_mutex_unlock (GST_LP_SINK_GET_LOCK(bin)))
+typedef struct _GstLpVideoSinkElem GstLpVideoSinkElem;
+typedef struct _GstLpAudioSinkElem GstLpAudioSinkElem;
+typedef struct _GstLpTextSinkElem GstLpTextSinkElem;
 typedef struct _GstLpSink GstLpSink;
 typedef struct _GstLpSinkClass GstLpSinkClass;
+
+struct _GstLpVideoSinkElem
+{
+  GstElement *video_sink;
+  GstPad *video_pad;
+};
+
+struct _GstLpAudioSinkElem
+{
+  GstElement *audio_sink;
+  GstPad *audio_pad;
+};
+
+struct _GstLpTextSinkElem
+{
+  GstElement *text_sink;
+  GstPad *text_pad;
+};
 
 struct _GstLpSink
 {
@@ -45,14 +66,23 @@ struct _GstLpSink
 
   GstElement *video_sink;
   GstElement *audio_sink;
-  GstPad *audio_pad;
-  GstPad *video_pad;
+  //GstPad *audio_pad;
+  //GstPad *video_pad;
+
+  GstCaps *audio_sink_caps;
+  GstCaps *video_sink_caps;
+  GstCaps *text_sink_caps;
 
   GstFlowReturn ret;
 
   gboolean thumbnail_mode;
+
   guint video_resource;
   guint audio_resource;
+
+  GList *video_sink_list;
+  GList *audio_sink_list;
+  GList *text_sink_list;
 };
 
 struct _GstLpSinkClass
@@ -76,6 +106,7 @@ void gst_lp_sink_set_sink (GstLpSink * lpsink, GstLpSinkType type,
 GstElement *gst_lp_sink_get_sink (GstLpSink * lpsink, GstLpSinkType type);
 void gst_lp_sink_set_thumbnail_mode (GstLpSink * lpsink,
     gboolean thumbnail_mode);
+void gst_lp_sink_set_caps (GstLpSink * lpsink, gchar * type, GstCaps * caps);
 
 G_END_DECLS
 #endif // __GST_LP_SINK_H__

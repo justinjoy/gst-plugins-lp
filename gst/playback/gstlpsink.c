@@ -141,8 +141,7 @@ gst_lp_sink_class_init (GstLpSinkClass * klass)
   g_object_class_install_property (gobject_klass, PROP_AUDIO_RESOURCE,
       g_param_spec_uint ("audio-resource", "Acquired audio resource",
           "Acquired audio resource (the most significant bit - 0: ADEC, 1: MIX / the remains - channel number)",
-          0, G_MAXUINT, 0,
-          G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
+          0, G_MAXUINT, 0, G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
 
 
   gst_element_class_add_pad_template (gstelement_klass,
@@ -175,12 +174,20 @@ gst_lp_sink_init (GstLpSink * lpsink)
   g_rec_mutex_init (&lpsink->lock);
   lpsink->audio_sink = NULL;
   lpsink->video_sink = NULL;
-  lpsink->video_pad = NULL;
-  lpsink->audio_pad = NULL;
+  //lpsink->video_pad = NULL;
+  //lpsink->audio_pad = NULL;
   lpsink->thumbnail_mode = DEFAULT_THUMBNAIL_MODE;
 
   lpsink->video_resource = 0;
   lpsink->audio_resource = 0;
+
+  lpsink->video_sink_caps = NULL;
+  lpsink->audio_sink_caps = NULL;
+  lpsink->text_sink_caps = NULL;
+
+  lpsink->video_sink_list = NULL;
+  lpsink->audio_sink_list = NULL;
+  lpsink->text_sink_list = NULL;
 }
 
 static void
@@ -201,6 +208,7 @@ gst_lp_sink_dispose (GObject * obj)
     lpsink->video_sink = NULL;
   }
 
+/*
   if (lpsink->audio_pad) {
     gst_object_unref (lpsink->audio_pad);
     lpsink->audio_pad = NULL;
@@ -210,6 +218,7 @@ gst_lp_sink_dispose (GObject * obj)
     gst_object_unref (lpsink->video_pad);
     lpsink->video_pad = NULL;
   }
+*/
 
   G_OBJECT_CLASS (parent_class)->dispose (obj);
 }
@@ -232,6 +241,7 @@ gst_lp_sink_finalize (GObject * obj)
     lpsink->video_sink = NULL;
   }
 
+/*
   if (lpsink->audio_pad) {
     gst_object_unref (lpsink->audio_pad);
     lpsink->audio_pad = NULL;
@@ -241,6 +251,7 @@ gst_lp_sink_finalize (GObject * obj)
     gst_object_unref (lpsink->video_pad);
     lpsink->video_pad = NULL;
   }
+*/
   G_OBJECT_CLASS (parent_class)->finalize (obj);
 }
 
@@ -249,6 +260,125 @@ gst_lp_sink_set_thumbnail_mode (GstLpSink * lpsink, gboolean thumbnail_mode)
 {
   GST_DEBUG_OBJECT (lpsink, "set thumbnail mode as %d", thumbnail_mode);
   lpsink->thumbnail_mode = thumbnail_mode;
+}
+
+void
+gst_lp_sink_set_caps (GstLpSink * lpsink, gchar * type, GstCaps * caps)
+{
+  GstCaps **origin_caps = NULL, *old = NULL;
+
+  GST_DEBUG_OBJECT (lpsink, "gst_lp_sink_set_caps : type = %s, caps = %s", type,
+      gst_caps_to_string (caps));
+
+  GST_LP_SINK_LOCK (lpsink);
+
+  if (!strcmp (type, "audio")) {
+    origin_caps = &lpsink->audio_sink_caps;
+  } else if (!strcmp (type, "video")) {
+    lpsink->video_sink_caps = caps;
+    origin_caps = &lpsink->video_sink_caps;
+  } else if (!strcmp (type, "text")) {
+    lpsink->text_sink_caps = caps;
+    origin_caps = &lpsink->text_sink_caps;
+  }
+
+  if (origin_caps)
+    old = *origin_caps;
+
+  if (caps)
+    gst_caps_ref (caps);
+  *origin_caps = caps;
+
+  GST_LP_SINK_UNLOCK (lpsink);
+
+  if (old) {
+    gst_caps_unref (old);
+  }
+}
+
+static gint
+sort_sink_element (gconstpointer p1, gconstpointer p2)
+{
+  GstPluginFeature *f1, *f2;
+  gint diff;
+
+
+  f1 = (GstPluginFeature *) p1;
+  f2 = (GstPluginFeature *) p2;
+
+  if (!strcmp (GST_OBJECT_NAME (f2), "lxmediabin")
+      || !strcmp (GST_OBJECT_NAME (f1), "lxmediabin")) {
+    gst_plugin_feature_set_rank (f2, GST_RANK_PRIMARY + 100);
+    goto diff;
+  }
+
+  if (!strcmp (GST_OBJECT_NAME (f2), "vdecsink")
+      || !strcmp (GST_OBJECT_NAME (f2), "adecsink")) {
+    gst_plugin_feature_set_rank (f2, GST_RANK_PRIMARY + 100);
+  } else if (!strcmp (GST_OBJECT_NAME (f1), "vdecsink")
+      || !strcmp (GST_OBJECT_NAME (f1), "adecsink")) {
+    gst_plugin_feature_set_rank (f1, GST_RANK_PRIMARY + 100);
+  }
+
+diff:
+  diff = gst_plugin_feature_get_rank (f2) - gst_plugin_feature_get_rank (f1);
+  if (diff != 0)
+    return diff;
+
+  diff = strcmp (GST_OBJECT_NAME (f2), GST_OBJECT_NAME (f1));
+
+  return diff;
+}
+
+gchar *
+gst_lp_sink_get_proper_sink_element (GstLpSink * lpsink, GstLpSinkType type)
+{
+  GST_DEBUG_OBJECT (lpsink, "gst_lp_sink_get_proper_sink_element");
+  GList *sink_elements = NULL;
+  GList *filtered = NULL;
+  GList *walk = NULL;
+  gchar *sink_name = "fakesink";
+
+  sink_elements =
+      gst_element_factory_list_get_elements
+      (GST_ELEMENT_FACTORY_TYPE_AUDIOVIDEO_SINKS, GST_RANK_MARGINAL);
+
+  if (sink_elements == NULL) {
+    GST_INFO_OBJECT (lpsink, "there is no element list for sink");
+    goto fail;
+  }
+
+  if (type == GST_LP_SINK_TYPE_AUDIO) {
+    filtered =
+        gst_element_factory_list_filter (sink_elements, lpsink->audio_sink_caps,
+        GST_PAD_SINK, FALSE);
+  } else {
+    filtered =
+        gst_element_factory_list_filter (sink_elements, lpsink->video_sink_caps,
+        GST_PAD_SINK, FALSE);
+  }
+
+  if (filtered == NULL) {
+    GST_INFO_OBJECT (lpsink, "there is no sink element for caps");
+    goto fail;
+  }
+
+  filtered = g_list_sort (filtered, sort_sink_element);
+  walk = filtered;
+
+  if (walk) {
+    GstElementFactory *factory = GST_ELEMENT_FACTORY_CAST (walk->data);
+    sink_name = GST_OBJECT_NAME (factory);
+  }
+
+fail:
+  if (sink_elements)
+    gst_plugin_feature_list_free (sink_elements);
+  if (filtered)
+    gst_plugin_feature_list_free (filtered);
+  GST_DEBUG_OBJECT (lpsink,
+      "gst_lp_sink_get_proper_sink_element : return sink_name = %s", sink_name);
+  return sink_name;
 }
 
 /**
@@ -261,13 +391,17 @@ gst_lp_sink_set_thumbnail_mode (GstLpSink * lpsink, gboolean thumbnail_mode)
  * Returns: a #GstPad of @type or %NULL when the pad could not be created.
  */
 GstPad *
-gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
+gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type,
+    gchar * sink_elem_name)
 {
   GstPad *res = NULL;
   GstPad *sinkpad;
   const gchar *sink_name;
   const gchar *pad_name;
   GstElement *sink_element;
+  GstLpVideoSinkElem *video_sink_elem;
+  GstLpAudioSinkElem *audio_sink_elem;
+  GstLpTextSinkElem *text_sink_elem;
 
   GST_LP_SINK_LOCK (lpsink);
 
@@ -276,17 +410,25 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
       if (lpsink->thumbnail_mode)
         sink_name = "fakesink";
       else
-        sink_name = "adecsink";
-      pad_name = "audio_sink";
-
+        sink_name = sink_elem_name;
+      //pad_name = "audio_sink";
+      pad_name =
+          g_strdup_printf ("audio_sink_%d",
+          g_list_length (lpsink->audio_sink_list));
       break;
     case GST_LP_SINK_TYPE_VIDEO:
-      sink_name = "vdecsink";
-      pad_name = "video_sink";
+      sink_name = sink_elem_name;
+      //pad_name = "video_sink";
+      pad_name =
+          g_strdup_printf ("video_sink_%d",
+          g_list_length (lpsink->video_sink_list));
       break;
     default:
       res = NULL;
   }
+  GST_DEBUG_OBJECT (lpsink,
+      "gst_lp_sink_request_pad : sink_elem_name = %s, pad_name = %s",
+      sink_elem_name, pad_name);
 
   sink_element = gst_element_factory_make (sink_name, NULL);
 
@@ -299,27 +441,25 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
   }
 
   /* FIXME: this code is only for LG SIC sink */
-  GST_DEBUG_OBJECT(lpsink, "Setting hardware resource");
-  switch (type)
-  {
+  GST_DEBUG_OBJECT (lpsink, "Setting hardware resource");
+  switch (type) {
     case GST_LP_SINK_TYPE_AUDIO:
-      if (lpsink->audio_resource & (1 << 31))
-      {
-        g_object_set(sink_element, "mixer", TRUE, NULL);
-      }
-      else
-      {
-        g_object_set(sink_element, "mixer", FALSE, NULL);
+      if (lpsink->audio_resource & (1 << 31)) {
+        g_object_set (sink_element, "mixer", TRUE, NULL);
+      } else {
+        g_object_set (sink_element, "mixer", FALSE, NULL);
       }
 
-      g_object_set(sink_element, "index", (lpsink->audio_resource & ~(1 << 31)), NULL);
-      GST_DEBUG_OBJECT(sink_element, "Request to acquire [%s:%x]",
-        (lpsink->audio_resource & (1 << 31)) ? "MIXER" : "ADEC",
-        (lpsink->audio_resource & ~(1 << 31)));
+      g_object_set (sink_element, "index",
+          (lpsink->audio_resource & ~(1 << 31)), NULL);
+      GST_DEBUG_OBJECT (sink_element, "Request to acquire [%s:%x]",
+          (lpsink->audio_resource & (1 << 31)) ? "MIXER" : "ADEC",
+          (lpsink->audio_resource & ~(1 << 31)));
       break;
     case GST_LP_SINK_TYPE_VIDEO:
-      GST_DEBUG_OBJECT(sink_element, "Passing vdec ch property[%x] into vdecsink", lpsink->video_resource);
-      g_object_set(sink_element, "vdec-ch", lpsink->video_resource, NULL);
+      GST_DEBUG_OBJECT (sink_element,
+          "Passing vdec ch property[%x] into vdecsink", lpsink->video_resource);
+      g_object_set (sink_element, "vdec-ch", lpsink->video_resource, NULL);
       break;
   }
 
@@ -328,11 +468,19 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
   res = gst_ghost_pad_new_no_target (pad_name, GST_PAD_SINK);
 
   if (type == GST_LP_SINK_TYPE_AUDIO) {
-    lpsink->audio_sink = sink_element;
-    lpsink->audio_pad = res;
+    //lpsink->audio_sink = sink_element;
+    //lpsink->audio_pad = res;
+
+    audio_sink_elem = g_slice_alloc0 (sizeof (GstLpAudioSinkElem));
+    audio_sink_elem->audio_sink = sink_element;
+    audio_sink_elem->audio_pad = res;
   } else if (type == GST_LP_SINK_TYPE_VIDEO) {
-    lpsink->video_sink = sink_element;
-    lpsink->video_pad = res;
+    //lpsink->video_sink = sink_element;
+    //lpsink->video_pad = res;
+
+    video_sink_elem = g_slice_alloc0 (sizeof (GstLpVideoSinkElem));
+    video_sink_elem->video_sink = sink_element;
+    video_sink_elem->video_pad = res;
   }
 
   gst_pad_set_active (res, TRUE);
@@ -354,10 +502,20 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
       gst_element_set_state (sink_element, GST_STATE_PAUSED);
       sinkpad = gst_element_get_static_pad (sink_element, "sink");
       gst_ghost_pad_set_target (GST_GHOST_PAD_CAST (res), sinkpad);
-      lpsink->audio_sink = sink_element;
+      //lpsink->audio_sink = sink_element;
+      audio_sink_elem->audio_sink = sink_element;
     }
   }
 
+  if (type == GST_LP_SINK_TYPE_AUDIO) {
+    lpsink->audio_sink_list =
+        g_list_append (lpsink->audio_sink_list,
+        (GstLpAudioSinkElem *) audio_sink_elem);
+  } else if (type == GST_LP_SINK_TYPE_VIDEO) {
+    lpsink->video_sink_list =
+        g_list_append (lpsink->video_sink_list,
+        (GstLpVideoSinkElem *) video_sink_elem);
+  }
   gst_object_unref (sinkpad);
 beach:
   GST_LP_SINK_UNLOCK (lpsink);
@@ -373,6 +531,7 @@ gst_lp_sink_request_new_pad (GstElement * element, GstPadTemplate * templ,
   const gchar *tplname;
   GstPad *pad;
   GstLpSinkType type;
+  gchar *sink_name;
 
   g_return_val_if_fail (templ != NULL, NULL);
   GST_DEBUG_OBJECT (element, "name: %s", name);
@@ -389,7 +548,8 @@ gst_lp_sink_request_new_pad (GstElement * element, GstPadTemplate * templ,
   else
     goto unknown_template;
 
-  pad = gst_lp_sink_request_pad (lpsink, type);
+  sink_name = gst_lp_sink_get_proper_sink_element (lpsink, type);
+  pad = gst_lp_sink_request_pad (lpsink, type, sink_name);
   return pad;
 
 unknown_template:
@@ -406,15 +566,42 @@ gst_lp_sink_release_pad (GstLpSink * lpsink, GstPad * pad)
   GST_DEBUG_OBJECT (lpsink, "release pad %" GST_PTR_FORMAT, pad);
 
   GST_LP_SINK_LOCK (lpsink);
-  if (pad == lpsink->video_pad) {
-    res = &lpsink->video_pad;
-  } else if (pad == lpsink->audio_pad) {
-    res = &lpsink->audio_pad;
-  } else {
+  if (lpsink->audio_sink_list) {
+    GList *walk = lpsink->audio_sink_list;
+
+    while (walk) {
+      GstLpAudioSinkElem *audio_sink_elem = NULL;
+      audio_sink_elem = (GstLpAudioSinkElem *) walk->data;
+
+      if (pad == audio_sink_elem->audio_pad) {
+        res = &audio_sink_elem->audio_pad;
+        break;
+      }
+
+      walk = g_list_next (walk);
+    }
+  }
+
+  if (lpsink->video_sink_list) {
+    GList *walk = lpsink->video_sink_list;
+
+    while (walk) {
+      GstLpVideoSinkElem *video_sink_elem = NULL;
+      video_sink_elem = (GstLpVideoSinkElem *) walk->data;
+
+      if (pad == video_sink_elem->video_pad) {
+        res = &video_sink_elem->video_pad;
+        break;
+      }
+
+      walk = g_list_next (walk);
+    }
+  }
+
+  if (res == NULL) {
     res = &pad;
     untarget = FALSE;
   }
-
   GST_LP_SINK_UNLOCK (lpsink);
   if (*res) {
     GST_DEBUG_OBJECT (lpsink, "deactivate pad %" GST_PTR_FORMAT, *res);
@@ -464,10 +651,10 @@ gst_lp_sink_set_property (GObject * object, guint prop_id,
           g_value_get_object (value));
       break;
     case PROP_VIDEO_RESOURCE:
-      lpsink->video_resource = g_value_get_uint(value);
+      lpsink->video_resource = g_value_get_uint (value);
       break;
     case PROP_AUDIO_RESOURCE:
-      lpsink->video_resource = g_value_get_uint(value);
+      lpsink->video_resource = g_value_get_uint (value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, spec);
@@ -522,21 +709,42 @@ gst_lp_sink_send_event_to_sink (GstLpSink * lpsink, GstEvent * event)
 {
   gboolean res = TRUE;
 
-  if (lpsink->video_sink) {
+  if (lpsink->video_sink_list) {
     gst_event_ref (event);
-    if ((res = gst_element_send_event (lpsink->video_sink, event))) {
-      GST_DEBUG_OBJECT (lpsink, "Sent event successfully to video sink");
-      goto done;
+    GList *walk = lpsink->video_sink_list;
+
+    while (walk) {
+      GstLpVideoSinkElem *video_sink_elem = NULL;
+      video_sink_elem = (GstLpVideoSinkElem *) walk->data;
+
+      if ((res = gst_element_send_event (video_sink_elem->video_sink, event))) {
+        GST_DEBUG_OBJECT (lpsink, "Sent event successfully to video sink");
+      }
+      GST_DEBUG_OBJECT (lpsink, "Event failed when sent to video sink");
+
+      walk = g_list_next (walk);
     }
-    GST_DEBUG_OBJECT (lpsink, "Event failed when sent to video sink");
+    if (res)
+      goto done;
   }
-  if (lpsink->audio_sink) {
+
+  if (lpsink->audio_sink_list) {
     gst_event_ref (event);
-    if ((res = gst_element_send_event (lpsink->audio_sink, event))) {
-      GST_DEBUG_OBJECT (lpsink, "Sent event successfully to audio sink");
-      goto done;
+    GList *walk = lpsink->audio_sink_list;
+
+    while (walk) {
+      GstLpAudioSinkElem *audio_sink_elem = NULL;
+      audio_sink_elem = (GstLpAudioSinkElem *) walk->data;
+
+      if ((res = gst_element_send_event (audio_sink_elem->audio_sink, event))) {
+        GST_DEBUG_OBJECT (lpsink, "Sent event successfully to audio sink");
+      }
+      GST_DEBUG_OBJECT (lpsink, "Event failed when sent to audio sink");
+
+      walk = g_list_next (walk);
     }
-    GST_DEBUG_OBJECT (lpsink, "Event failed when sent to audio sink");
+    if (res)
+      goto done;
   }
 
 done:
@@ -587,19 +795,47 @@ gst_lp_sink_change_state (GstElement * element, GstStateChange transition)
     case GST_STATE_CHANGE_READY_TO_PAUSED:
       break;
     case GST_STATE_CHANGE_READY_TO_NULL:
-      gst_lp_sink_release_pad (lpsink, lpsink->audio_pad);
-      gst_lp_sink_release_pad (lpsink, lpsink->video_pad);
-      if (lpsink->audio_sink != NULL) {
-        gst_element_set_state (lpsink->audio_sink, GST_STATE_NULL);
-        gst_bin_remove (GST_BIN_CAST (lpsink), lpsink->audio_sink);
-        //g_assert (lpsink->audio_sink != NULL);
-        lpsink->audio_sink = NULL;
+      if (lpsink->audio_sink_list) {
+        GList *walk = lpsink->audio_sink_list;
+
+        while (walk) {
+          GstLpAudioSinkElem *audio_sink_elem = NULL;
+          audio_sink_elem = (GstLpAudioSinkElem *) walk->data;
+
+          gst_lp_sink_release_pad (lpsink, audio_sink_elem->audio_pad);
+
+          if (audio_sink_elem->audio_sink != NULL) {
+            gst_element_set_state (audio_sink_elem->audio_sink, GST_STATE_NULL);
+            gst_bin_remove (GST_BIN_CAST (lpsink), audio_sink_elem->audio_sink);
+            //g_assert (lpsink->audio_sink != NULL);
+            audio_sink_elem->audio_sink = NULL;
+            g_slice_free (GstLpAudioSinkElem, audio_sink_elem);
+            g_list_remove (lpsink->audio_sink_list, audio_sink_elem);
+          }
+
+          walk = g_list_next (walk);
+        }
       }
-      if (lpsink->video_sink != NULL) {
-        gst_element_set_state (lpsink->video_sink, GST_STATE_NULL);
-        gst_bin_remove (GST_BIN_CAST (lpsink), lpsink->video_sink);
-        //g_assert (lpsink->video_sink != NULL);
-        lpsink->video_sink = NULL;
+
+      if (lpsink->video_sink_list) {
+        GList *walk = lpsink->video_sink_list;
+
+        while (walk) {
+          GstLpVideoSinkElem *video_sink_elem = NULL;
+          video_sink_elem = (GstLpVideoSinkElem *) walk->data;
+
+          gst_lp_sink_release_pad (lpsink, video_sink_elem->video_pad);
+
+          if (video_sink_elem->video_sink != NULL) {
+            gst_element_set_state (video_sink_elem->video_sink, GST_STATE_NULL);
+            gst_bin_remove (GST_BIN_CAST (lpsink), video_sink_elem->video_sink);
+            video_sink_elem->video_sink = NULL;
+            g_slice_free (GstLpVideoSinkElem, video_sink_elem);
+            g_list_remove (lpsink->video_sink_list, video_sink_elem);
+          }
+
+          walk = g_list_next (walk);
+        }
       }
       break;
     default:

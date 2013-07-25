@@ -115,13 +115,13 @@ gst_fakeadec_class_init (GstFakeAdecClass * klass)
       gst_static_pad_template_get (&gst_fakeadec_sink_pad_template));
 
   gst_element_class_set_static_metadata (element_class, "Fake Audio decoder",
-      "Codec/Decoder/Video",
+      "Codec/Decoder/Audio",
       "Pass data to backend decoder",
       "Wonchul Lee <wonchul86.lee@lge.com>,Justin Joy <justin.joy.9to5@gmail.com>");
 
   element_class->change_state = GST_DEBUG_FUNCPTR (gst_fakeadec_change_state);
 
-  GST_DEBUG_CATEGORY_INIT (fakeadec_debug, "fakeadec", 0, "Fake video decoder");
+  GST_DEBUG_CATEGORY_INIT (fakeadec_debug, "fakeadec", 0, "Fake audio decoder");
 }
 
 static void
