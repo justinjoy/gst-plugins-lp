@@ -78,7 +78,7 @@ bus_call (GstBus * bus, GstMessage * message, gpointer data)
           gst_element_state_get_name (newstate),
           gst_element_state_get_name (pending));
 
-      if (newstate == GST_STATE_PAUSED) {
+      if (newstate == GST_STATE_PLAYING) {
         GstElement *elem = NULL;
         GstElementFactory *factory = NULL;
         const gchar *klass = NULL;
@@ -91,6 +91,9 @@ bus_call (GstBus * bus, GstMessage * message, gpointer data)
 
         if (strstr (klass, "Lightweight/Bin/Player")) {
           get_thumbnail (lpbin);
+          gst_element_set_state (lpbin, GST_STATE_NULL);
+          g_object_unref (lpbin);
+          g_main_loop_quit (loop);
         }
       }
       break;
@@ -174,10 +177,7 @@ main (gint argc, gchar * argv[])
   g_main_loop_run (loop);
 
 done:
-  gst_element_set_state (lpbin, GST_STATE_NULL);
-  g_object_unref (lpbin);
   g_source_remove (bus_watch_id);
-  g_main_loop_unref (loop);
 
   return 0;
 }

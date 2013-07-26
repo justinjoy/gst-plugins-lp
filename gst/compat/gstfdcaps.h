@@ -22,7 +22,6 @@
 #define __GST_FD_CAPS_H__
 
 G_BEGIN_DECLS
-
 #define FD_VIDEO_CAPS \
     "video/x-divx;" \
     "video/x-h264;" \
@@ -40,8 +39,6 @@ G_BEGIN_DECLS
     "video/x-xvid;" \
     "video/x-flash-video;" \
     "video/x-raw"
-
-
 #define FD_AUDIO_CAPS \
     "audio/mpeg;"\
     "audio/x-dts;" \
@@ -64,8 +61,5 @@ G_BEGIN_DECLS
     "audio/x-mulaw;" \
     "audio/x-alaw;" \
     "audio/x-private1-dts"
-
-
-G_END_DECLS
-
+    G_END_DECLS
 #endif // __GST_FD_CAPS_H__

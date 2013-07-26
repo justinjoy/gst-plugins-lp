@@ -749,6 +749,7 @@ array_has_value (const gchar * values[], const gchar * value)
   }
   return FALSE;
 }
+
 /*
 static GstStateChangeReturn
 gst_fc_bin_change_state (GstElement * element, GstStateChange transition)
