@@ -86,6 +86,9 @@ struct _GstLpBin
 
   gboolean thumbnail_mode;
   gboolean use_buffering;
+
+  guint video_resource;
+  guint audio_resource;
 };
 
 struct _GstLpBinClass

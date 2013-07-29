@@ -44,6 +44,8 @@ enum
   PROP_VIDEO_SINK,
   PROP_THUMBNAIL_MODE,
   PROP_USE_BUFFERING,
+  PROP_VIDEO_RESOURCE,
+  PROP_AUDIO_RESOURCE,
   PROP_LAST
 };
 
@@ -256,6 +258,17 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
           "set use-buffering property at multiqueue", DEFAULT_USE_BUFFERING,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  g_object_class_install_property (gobject_klass, PROP_VIDEO_RESOURCE,
+      g_param_spec_uint ("video-resource", "Acquired video resource",
+          "Acquired vidio resource", 0, 2, 0,
+          G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property (gobject_klass, PROP_AUDIO_RESOURCE,
+      g_param_spec_uint ("audio-resource", "Acquired audio resource",
+          "Acquired audio resource.(the most significant bit - 0: ADEC, 1: MIX / the remains - channel number)", 
+          0, G_MAXUINT, 0,
+          G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
+
   gst_lp_bin_signals[SIGNAL_ABOUT_TO_FINISH] =
       g_signal_new ("about-to-finish", G_TYPE_FROM_CLASS (klass),
       G_SIGNAL_RUN_LAST,
@@ -423,6 +436,9 @@ gst_lp_bin_init (GstLpBin * lpbin)
 
   lpbin->thumbnail_mode = DEFAULT_THUMBNAIL_MODE;
   lpbin->use_buffering = DEFAULT_USE_BUFFERING;
+
+  lpbin->video_resource = 0;
+  lpbin->audio_resource = 0;
 }
 
 static void
@@ -547,6 +563,14 @@ gst_lp_bin_set_property (GObject * object, guint prop_id,
       break;
     case PROP_USE_BUFFERING:
       lpbin->use_buffering = g_value_get_boolean (value);
+      break;
+    case PROP_VIDEO_RESOURCE:
+      lpbin->video_resource = g_value_get_uint(value);
+      GST_DEBUG_OBJECT (lpbin, "setting video resource [%x]", lpbin->video_resource);
+      break;
+    case PROP_AUDIO_RESOURCE:
+      lpbin->audio_resource = g_value_get_uint(value);
+      GST_DEBUG_OBJECT (lpbin, "setting audio resource [%x]", lpbin->audio_resource);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -775,6 +799,7 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
 {
   GstCaps *fd_caps;
 
+  /* FIXME: Using fixed value caps is not a good idea.*/
   fd_caps = gst_caps_from_string ("video/x-fd; audio/x-fd");
 
   lpbin->uridecodebin = gst_element_factory_make ("uridecodebin", NULL);
@@ -826,6 +851,22 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
         "setup_element : set lpsink thumbnail-mode as TRUE");
     gst_lp_bin_set_thumbnail_mode (lpbin, lpbin->thumbnail_mode);
   }
+
+  /* 
+   * FIXME: These are not compatible with multi-sink support.
+   */
+  if (g_object_class_find_property (G_OBJECT_GET_CLASS (lpbin->lpsink),
+      "video-resource"))
+  {
+    g_object_set(lpbin->lpsink, "video-resource", lpbin->video_resource, NULL);
+  }
+  else
+  {
+    GST_WARNING_OBJECT (lpbin, "lpsink doesn't video-resource property.");
+  }
+
+  g_object_set(lpbin->lpsink, "audio-resource", lpbin->audio_resource, NULL);
+
   gst_bin_add (GST_BIN_CAST (lpbin), lpbin->lpsink);
 
   g_object_unref (fd_caps);
@@ -933,6 +974,7 @@ gst_lp_bin_change_state (GstElement * element, GstStateChange transition)
     default:
       break;
   }
+
   return ret;
 
   /* ERRORS */

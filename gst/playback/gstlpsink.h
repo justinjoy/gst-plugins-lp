@@ -51,6 +51,8 @@ struct _GstLpSink
   GstFlowReturn ret;
 
   gboolean thumbnail_mode;
+  guint video_resource;
+  guint audio_resource;
 };
 
 struct _GstLpSinkClass

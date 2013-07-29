@@ -52,6 +52,8 @@ enum
   PROP_0,
   PROP_VIDEO_SINK,
   PROP_AUDIO_SINK,
+  PROP_VIDEO_RESOURCE,
+  PROP_AUDIO_RESOURCE,
   PROP_LAST
 };
 
@@ -131,6 +133,18 @@ gst_lp_sink_class_init (GstLpSinkClass * klass)
           "the audio output element to use (NULL = default sink)",
           GST_TYPE_ELEMENT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  g_object_class_install_property (gobject_klass, PROP_VIDEO_RESOURCE,
+      g_param_spec_uint ("video-resource", "Acquired video resource",
+          "Acquired video resource", 0, 2, 0,
+          G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property (gobject_klass, PROP_AUDIO_RESOURCE,
+      g_param_spec_uint ("audio-resource", "Acquired audio resource",
+          "Acquired audio resource (the most significant bit - 0: ADEC, 1: MIX / the remains - channel number)",
+          0, G_MAXUINT, 0,
+          G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
+
+
   gst_element_class_add_pad_template (gstelement_klass,
       gst_static_pad_template_get (&audiotemplate));
   gst_element_class_add_pad_template (gstelement_klass,
@@ -156,12 +170,17 @@ gst_lp_sink_class_init (GstLpSinkClass * klass)
 static void
 gst_lp_sink_init (GstLpSink * lpsink)
 {
+  GST_DEBUG_CATEGORY_INIT (gst_lp_sink_debug, "lpsink", 0,
+      "Lightweight Play Sink");
   g_rec_mutex_init (&lpsink->lock);
   lpsink->audio_sink = NULL;
   lpsink->video_sink = NULL;
   lpsink->video_pad = NULL;
   lpsink->audio_pad = NULL;
   lpsink->thumbnail_mode = DEFAULT_THUMBNAIL_MODE;
+
+  lpsink->video_resource = 0;
+  lpsink->audio_resource = 0;
 }
 
 static void
@@ -250,7 +269,7 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
   const gchar *pad_name;
   GstElement *sink_element;
 
-  //GST_LP_SINK_LOCK (lpsink);
+  GST_LP_SINK_LOCK (lpsink);
 
   switch (type) {
     case GST_LP_SINK_TYPE_AUDIO:
@@ -279,6 +298,31 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
     goto beach;
   }
 
+  /* FIXME: this code is only for LG SIC sink */
+  GST_DEBUG_OBJECT(lpsink, "Setting hardware resource");
+  switch (type)
+  {
+    case GST_LP_SINK_TYPE_AUDIO:
+      if (lpsink->audio_resource & (1 << 31))
+      {
+        g_object_set(sink_element, "mixer", TRUE, NULL);
+      }
+      else
+      {
+        g_object_set(sink_element, "mixer", FALSE, NULL);
+      }
+
+      g_object_set(sink_element, "index", (lpsink->audio_resource & ~(1 << 31)), NULL);
+      GST_DEBUG_OBJECT(sink_element, "Request to acquire [%s:%x]",
+        (lpsink->audio_resource & (1 << 31)) ? "MIXER" : "ADEC",
+        (lpsink->audio_resource & ~(1 << 31)));
+      break;
+    case GST_LP_SINK_TYPE_VIDEO:
+      GST_DEBUG_OBJECT(sink_element, "Passing vdec ch property[%x] into vdecsink", lpsink->video_resource);
+      g_object_set(sink_element, "vdec-ch", lpsink->video_resource, NULL);
+      break;
+  }
+
   gst_bin_add (GST_BIN_CAST (lpsink), sink_element);
   gst_element_set_state (sink_element, GST_STATE_PAUSED);
   res = gst_ghost_pad_new_no_target (pad_name, GST_PAD_SINK);
@@ -301,7 +345,7 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
     if (type == GST_LP_SINK_TYPE_AUDIO) {
       gst_object_unref (sinkpad);
 
-      GST_INFO_OBJECT (sinkpad, "A Fakesink will be deployed for audio sink.");
+      GST_INFO_OBJECT (sinkpad, "A fakesink will be deployed for audio sink.");
 
       gst_bin_remove (GST_BIN_CAST (lpsink), sink_element);
       sink_element = gst_element_factory_make ("fakesink", NULL);
@@ -316,8 +360,7 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
 
   gst_object_unref (sinkpad);
 beach:
-
-  //GST_LP_SINK_UNLOCK (lpsink);
+  GST_LP_SINK_UNLOCK (lpsink);
 
   return res;
 }
@@ -419,6 +462,12 @@ gst_lp_sink_set_property (GObject * object, guint prop_id,
     case PROP_AUDIO_SINK:
       gst_lp_sink_set_sink (lpsink, GST_LP_SINK_TYPE_AUDIO,
           g_value_get_object (value));
+      break;
+    case PROP_VIDEO_RESOURCE:
+      lpsink->video_resource = g_value_get_uint(value);
+      break;
+    case PROP_AUDIO_RESOURCE:
+      lpsink->video_resource = g_value_get_uint(value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, spec);
