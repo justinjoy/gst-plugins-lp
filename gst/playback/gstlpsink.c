@@ -40,8 +40,7 @@ GST_STATIC_PAD_TEMPLATE ("video_sink",
     GST_PAD_SINK,
     GST_PAD_REQUEST,
     GST_STATIC_CAPS_ANY);
-static GstStaticPadTemplate texttemplate =
-GST_STATIC_PAD_TEMPLATE ("text_sink_%u",
+static GstStaticPadTemplate texttemplate = GST_STATIC_PAD_TEMPLATE ("text_sink",
     GST_PAD_SINK,
     GST_PAD_REQUEST,
     GST_STATIC_CAPS_ANY);
@@ -81,6 +80,7 @@ static void gst_lp_sink_handle_message (GstBin * bin, GstMessage * message);
 void gst_lp_sink_set_sink (GstLpSink * lpsink, GstLpSinkType type,
     GstElement * sink);
 GstElement *gst_lp_sink_get_sink (GstLpSink * lpsink, GstLpSinkType type);
+static void new_sample (GstElement * sink);
 
 static void
 _do_init (GType type)
@@ -141,8 +141,7 @@ gst_lp_sink_class_init (GstLpSinkClass * klass)
   g_object_class_install_property (gobject_klass, PROP_AUDIO_RESOURCE,
       g_param_spec_uint ("audio-resource", "Acquired audio resource",
           "Acquired audio resource (the most significant bit - 0: ADEC, 1: MIX / the remains - channel number)",
-          0, G_MAXUINT, 0,
-          G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
+          0, G_MAXUINT, 0, G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
 
 
   gst_element_class_add_pad_template (gstelement_klass,
@@ -284,6 +283,9 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
       sink_name = "vdecsink";
       pad_name = "video_sink";
       break;
+    case GST_LP_SINK_TYPE_TEXT:
+      sink_name = "appsink";
+      pad_name = "text_sink";
     default:
       res = NULL;
   }
@@ -299,27 +301,30 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
   }
 
   /* FIXME: this code is only for LG SIC sink */
-  GST_DEBUG_OBJECT(lpsink, "Setting hardware resource");
-  switch (type)
-  {
+  GST_DEBUG_OBJECT (lpsink, "Setting hardware resource");
+  switch (type) {
     case GST_LP_SINK_TYPE_AUDIO:
-      if (lpsink->audio_resource & (1 << 31))
-      {
-        g_object_set(sink_element, "mixer", TRUE, NULL);
-      }
-      else
-      {
-        g_object_set(sink_element, "mixer", FALSE, NULL);
+      if (lpsink->audio_resource & (1 << 31)) {
+        g_object_set (sink_element, "mixer", TRUE, NULL);
+      } else {
+        g_object_set (sink_element, "mixer", FALSE, NULL);
       }
 
-      g_object_set(sink_element, "index", (lpsink->audio_resource & ~(1 << 31)), NULL);
-      GST_DEBUG_OBJECT(sink_element, "Request to acquire [%s:%x]",
-        (lpsink->audio_resource & (1 << 31)) ? "MIXER" : "ADEC",
-        (lpsink->audio_resource & ~(1 << 31)));
+      g_object_set (sink_element, "index",
+          (lpsink->audio_resource & ~(1 << 31)), NULL);
+      GST_DEBUG_OBJECT (sink_element, "Request to acquire [%s:%x]",
+          (lpsink->audio_resource & (1 << 31)) ? "MIXER" : "ADEC",
+          (lpsink->audio_resource & ~(1 << 31)));
       break;
     case GST_LP_SINK_TYPE_VIDEO:
-      GST_DEBUG_OBJECT(sink_element, "Passing vdec ch property[%x] into vdecsink", lpsink->video_resource);
-      g_object_set(sink_element, "vdec-ch", lpsink->video_resource, NULL);
+      GST_DEBUG_OBJECT (sink_element,
+          "Passing vdec ch property[%x] into vdecsink", lpsink->video_resource);
+      g_object_set (sink_element, "vdec-ch", lpsink->video_resource, NULL);
+      break;
+    case GST_LP_SINK_TYPE_TEXT:
+      g_object_set (sink_element, "emit-signals", TRUE, NULL);
+      g_signal_connect (sink_element, "new-sample", G_CALLBACK (new_sample),
+          NULL);
       break;
   }
 
@@ -464,7 +469,7 @@ gst_lp_sink_set_property (GObject * object, guint prop_id,
           g_value_get_object (value));
       break;
     case PROP_VIDEO_RESOURCE:
-      lpsink->video_resource = g_value_get_uint(value);
+      lpsink->video_resource = g_value_get_uint (value);
       break;
     case PROP_AUDIO_RESOURCE:
       lpsink->audio_resource = g_value_get_uint (value);
@@ -673,4 +678,36 @@ gst_lp_sink_get_sink (GstLpSink * lpsink, GstLpSinkType type)
   GST_LP_SINK_UNLOCK (lpsink);
 
   return result;
+}
+
+static void
+new_sample (GstElement * sink)
+{
+  GstSample *sample;
+  GstBuffer *buffer;
+  GstCaps *caps;
+  GstStructure *structure;
+
+  GstPad *pad;
+
+  pad = gst_element_get_static_pad (sink, "sink");
+  caps = gst_pad_get_current_caps (pad);
+
+  g_signal_emit_by_name (sink, "pull-sample", &sample);
+
+  if (sample) {
+    buffer = gst_sample_get_buffer (sample);
+
+    structure =
+        gst_structure_new ("subtitle_data", "caps", GST_TYPE_CAPS, caps,
+        "buffer", GST_TYPE_BUFFER, buffer, NULL);
+
+    gst_element_post_message (sink,
+        gst_message_new_application (GST_OBJECT_CAST (sink), structure));
+
+    gst_sample_unref (sample);
+  }
+
+  if (caps)
+    gst_caps_unref (caps);
 }

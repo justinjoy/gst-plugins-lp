@@ -265,9 +265,8 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
 
   g_object_class_install_property (gobject_klass, PROP_AUDIO_RESOURCE,
       g_param_spec_uint ("audio-resource", "Acquired audio resource",
-          "Acquired audio resource.(the most significant bit - 0: ADEC, 1: MIX / the remains - channel number)", 
-          0, G_MAXUINT, 0,
-          G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
+          "Acquired audio resource.(the most significant bit - 0: ADEC, 1: MIX / the remains - channel number)",
+          0, G_MAXUINT, 0, G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
 
   gst_lp_bin_signals[SIGNAL_ABOUT_TO_FINISH] =
       g_signal_new ("about-to-finish", G_TYPE_FROM_CLASS (klass),
@@ -433,6 +432,7 @@ gst_lp_bin_init (GstLpBin * lpbin)
 
   lpbin->video_pad = NULL;
   lpbin->audio_pad = NULL;
+  lpbin->text_pad = NULL;
 
   lpbin->thumbnail_mode = DEFAULT_THUMBNAIL_MODE;
   lpbin->use_buffering = DEFAULT_USE_BUFFERING;
@@ -456,6 +456,9 @@ gst_lp_bin_finalize (GObject * obj)
 
   if (lpbin->audio_pad)
     gst_object_unref (lpbin->audio_pad);
+
+  if (lpbin->text_pad)
+    gst_object_unref (lpbin->text_pad);
 
   if (lpbin->video_sink) {
     gst_element_set_state (lpbin->video_sink, GST_STATE_NULL);
@@ -565,12 +568,14 @@ gst_lp_bin_set_property (GObject * object, guint prop_id,
       lpbin->use_buffering = g_value_get_boolean (value);
       break;
     case PROP_VIDEO_RESOURCE:
-      lpbin->video_resource = g_value_get_uint(value);
-      GST_DEBUG_OBJECT (lpbin, "setting video resource [%x]", lpbin->video_resource);
+      lpbin->video_resource = g_value_get_uint (value);
+      GST_DEBUG_OBJECT (lpbin, "setting video resource [%x]",
+          lpbin->video_resource);
       break;
     case PROP_AUDIO_RESOURCE:
-      lpbin->audio_resource = g_value_get_uint(value);
-      GST_DEBUG_OBJECT (lpbin, "setting audio resource [%x]", lpbin->audio_resource);
+      lpbin->audio_resource = g_value_get_uint (value);
+      GST_DEBUG_OBJECT (lpbin, "setting audio resource [%x]",
+          lpbin->audio_resource);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -697,6 +702,8 @@ pad_added_cb (GstElement * decodebin, GstPad * pad, GstLpBin * lpbin)
     lpbin->video_pad = fcbin_srcpad;
   } else if (!lpbin->audio_pad && g_str_has_prefix (name, "audio/")) {
     lpbin->audio_pad = fcbin_srcpad;
+  } else if (!lpbin->text_pad && g_str_has_prefix (name, "text/")) {
+    lpbin->text_pad = fcbin_srcpad;
   }
 
   g_object_unref (tmpl);
@@ -742,6 +749,11 @@ no_more_pads_cb (GstElement * decodebin, GstLpBin * lpbin)
   if (lpbin->audio_pad) {
     lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, "audio_sink");
     gst_pad_link (lpbin->audio_pad, lpsink_sinkpad);
+  }
+
+  if (lpbin->text_pad) {
+    lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, "text_sink");
+    gst_pad_link (lpbin->text_pad, lpsink_sinkpad);
   }
 }
 
@@ -799,8 +811,10 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
 {
   GstCaps *fd_caps;
 
-  /* FIXME: Using fixed value caps is not a good idea.*/
-  fd_caps = gst_caps_from_string ("video/x-fd; audio/x-fd");
+  /* FIXME: Using fixed value caps is not a good idea. */
+  fd_caps =
+      gst_caps_from_string
+      ("video/x-fd; audio/x-fd; text/x-avi-internal; text/x-avi-unknown; text/x-raw; application/x-ass; application/x-ssa; subpicture/x-dvd;");
 
   lpbin->uridecodebin = gst_element_factory_make ("uridecodebin", NULL);
 
@@ -856,16 +870,13 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
    * FIXME: These are not compatible with multi-sink support.
    */
   if (g_object_class_find_property (G_OBJECT_GET_CLASS (lpbin->lpsink),
-      "video-resource"))
-  {
-    g_object_set(lpbin->lpsink, "video-resource", lpbin->video_resource, NULL);
-  }
-  else
-  {
+          "video-resource")) {
+    g_object_set (lpbin->lpsink, "video-resource", lpbin->video_resource, NULL);
+  } else {
     GST_WARNING_OBJECT (lpbin, "lpsink doesn't video-resource property.");
   }
 
-  g_object_set(lpbin->lpsink, "audio-resource", lpbin->audio_resource, NULL);
+  g_object_set (lpbin->lpsink, "audio-resource", lpbin->audio_resource, NULL);
 
   gst_bin_add (GST_BIN_CAST (lpbin), lpbin->lpsink);
 
@@ -898,6 +909,10 @@ gst_lp_bin_deactive (GstLpBin * lpbin)
   if (lpbin->audio_pad) {
     //gst_object_unref (lpbin->audio_pad);
     lpbin->audio_pad = NULL;
+  }
+
+  if (lpbin->text_pad) {
+    lpbin->text_pad = NULL;
   }
 
   if (lpbin->fcbin) {

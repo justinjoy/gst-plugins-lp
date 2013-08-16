@@ -76,6 +76,7 @@ struct _GstLpBin
 
   GstPad *video_pad;            /* contains srcpads of input-selectors for connect with lpsink */
   GstPad *audio_pad;
+  GstPad *text_pad;
 
   GstElement *audio_sink;       /* configured audio sink, or NULL  */
   GstElement *video_sink;       /* configured video sink, or NULL */

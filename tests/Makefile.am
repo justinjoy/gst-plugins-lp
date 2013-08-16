@@ -1,4 +1,4 @@
-bin_PROGRAMS = lpbin_test autoplug_test thumbnail_mode_test caps_video_test lpbin_repeat_test
+bin_PROGRAMS = lpbin_test autoplug_test thumbnail_mode_test caps_video_test lpbin_repeat_test subtitle_test
 lpbin_test_SOURCES = lpbin-test.c
 lpbin_test_CPPFLAGS = -I$(top_srcdir)/gst/playback -I$(top_builddir)/gst/playback/.libs -I$(top_srcdir)/gst/compat/ -I$(top_builddir)/gst/compat/.libs
 lpbin_test_CFLAGS = $(GST_CFLAGS)
@@ -35,6 +35,14 @@ lpbin_repeat_test_SOURCES = lpbin-repeat-test.c
 lpbin_repeat_test_CPPFLAGS = -I$(top_srcdir)/gst/playback -I$(top_builddir)/gst/playback/.libs -I$(top_srcdir)/gst/compat/ -I$(top_builddir)/gst/compat/.libs
 lpbin_repeat_test_CFLAGS = $(GST_CFLAGS)
 lpbin_repeat_test_LDADD =                             \
+        -L$(top_builddir)/gst/playback/.libs/ -lgstlp   \
+        -L$(top_builddir)/gst/compat/.libs/ -lgstcompat \
+        $(GST_LIBS)
+
+subtitle_test_SOURCES = subtitle-test.c
+subtitle_test_CPPFLAGS = -I$(top_srcdir)/gst/playback -I$(top_builddir)/gst/playback/.libs -I$(top_srcdir)/gst/compat/ -I$(top_builddir)/gst/compat/.libs
+subtitle_test_CFLAGS = $(GST_CFLAGS)
+subtitle_test_LDADD =                             \
         -L$(top_builddir)/gst/playback/.libs/ -lgstlp   \
         -L$(top_builddir)/gst/compat/.libs/ -lgstcompat \
         $(GST_LIBS)
