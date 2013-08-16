@@ -38,8 +38,7 @@ G_BEGIN_DECLS
     "video/x-vp8;" \
     "video/x-xvid;" \
     "video/x-flash-video;" \
-    "video/x-raw;" \
-    "image/jpeg"
+    "video/x-raw"
 #define FD_AUDIO_CAPS \
     "audio/mpeg;"\
     "audio/x-dts;" \

@@ -86,12 +86,9 @@ struct _GstLpBin
 
   gboolean thumbnail_mode;
   gboolean use_buffering;
+
   guint video_resource;
   guint audio_resource;
-
-  GHashTable *video_padpairs;
-  GHashTable *audio_padpairs;
-  GHashTable *text_padpairs;
 };
 
 struct _GstLpBinClass

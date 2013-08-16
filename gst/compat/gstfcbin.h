@@ -34,11 +34,6 @@ G_BEGIN_DECLS
 #define GST_FC_BIN_GET_LOCK(bin) (&((GstFCBin*)(bin))->lock)
 #define GST_FC_BIN_LOCK(bin) (g_rec_mutex_lock (GST_FC_BIN_GET_LOCK(bin)))
 #define GST_FC_BIN_UNLOCK(bin) (g_rec_mutex_unlock (GST_FC_BIN_GET_LOCK(bin)))
-#define GST_FC_BIN_GET_COND(bin) (&((GstFCBin*)(bin))->cond)
-#define GST_FC_BIN_WAIT(bin) (g_cond_wait (GST_FC_BIN_GET_COND(bin), \
-			GST_FC_BIN_GET_LOCK(bin)))
-#define GST_FC_BIN_BROADCAST(bin) (g_cond_broadcast (GST_FC_BIN_GET_COND(bin)))
-typedef struct _GstFCCaps GstFCCaps;
 typedef struct _GstFCSelect GstFCSelect;
 typedef struct _GstFCBin GstFCBin;
 typedef struct _GstFCBinClass GstFCBinClass;
@@ -49,12 +44,6 @@ enum
   GST_FC_BIN_STREAM_VIDEO,
   GST_FC_BIN_STREAM_TEXT,
   GST_FC_BIN_STREAM_LAST
-};
-
-struct _GstFCCaps
-{
-  GstCaps *caps;
-  gboolean used;
 };
 
 struct _GstFCSelect
@@ -73,23 +62,10 @@ struct _GstFCBin
   GstBin parent;
 
   GRecMutex lock;
-  GCond cond;
-  gboolean blocked;
-  gboolean flushing;
 
   gint current_video;           /* the currently selected stream */
   gint current_audio;           /* the currently selected stream */
   gint current_text;            /* the currently selected stream */
-
-  gboolean video_bypass;
-  gboolean audio_bypass;
-  gboolean text_bypass;
-
-  GList *video_caps_list;
-  GList *audio_caps_list;
-  GList *text_caps_list;
-
-  gboolean setup_caps;
 
   GstFCSelect select[GST_FC_BIN_STREAM_LAST];
 };

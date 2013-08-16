@@ -30,7 +30,6 @@
 #include <gst/pbutils/missing-plugins.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 
 GST_DEBUG_CATEGORY_STATIC (fc_bin_debug);
 #define GST_CAT_DEFAULT fc_bin_debug
@@ -44,9 +43,6 @@ G_DEFINE_TYPE (GstFCBin, gst_fc_bin, GST_TYPE_BIN);
 #define DEFAULT_CURRENT_AUDIO   0
 #define DEFAULT_N_TEXT          0
 #define DEFAULT_CURRENT_TEXT    0
-#define DEFAULT_VIDEO_BYPASS FALSE
-#define DEFAULT_AUDIO_BYPASS FALSE
-#define DEFAULT_TEXT_BYPASS FALSE
 
 enum
 {
@@ -57,9 +53,6 @@ enum
   PROP_CURRENT_AUDIO,
   PROP_N_TEXT,
   PROP_CURRENT_TEXT,
-  PROP_VIDEO_BYPASS,
-  PROP_AUDIO_BYPASS,
-  PROP_TEXT_BYPASS,
   PROP_LAST
 };
 
@@ -71,14 +64,8 @@ static void gst_fc_bin_get_property (GObject * object, guint prop_id,
 static GstPad *gst_fc_bin_request_new_pad (GstElement * element,
     GstPadTemplate * templ, const gchar * name, const GstCaps * caps);
 static gboolean array_has_value (const gchar * values[], const gchar * value);
-static GstStateChangeReturn gst_fc_bin_change_state (GstElement * element,
-    GstStateChange transition);
-static GstIterator *gst_fc_bin_pad_iterate_linked_pads (GstPad * pad,
-    GstObject * parent);
-static GstFlowReturn gst_fc_bin_chain_bypass (GstPad * pad, GstObject * parent,
-    GstBuffer * buffer);
-static gboolean gst_fc_bin_pad_event (GstPad * pad, GstObject * parent,
-    GstEvent * event);
+/*static GstStateChangeReturn gst_fc_bin_change_state (GstElement * element,
+    GstStateChange transition);*/
 
 static GstStaticPadTemplate gst_fc_bin_sink_pad_template =
 GST_STATIC_PAD_TEMPLATE ("sink%u", GST_PAD_SINK,
@@ -219,22 +206,7 @@ gst_fc_bin_class_init (GstFCBinClass * klass)
           "Currently playing text stream (-1 = auto)",
           -1, G_MAXINT, -1, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
-  g_object_class_install_property (gobject_klass, PROP_VIDEO_BYPASS,
-      g_param_spec_boolean ("video-bypass", "video by-pass",
-          "Video by-pass mode", DEFAULT_VIDEO_BYPASS,
-          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property (gobject_klass, PROP_AUDIO_BYPASS,
-      g_param_spec_boolean ("audio-bypass", "audio by-pass",
-          "Audio by-pass mode", DEFAULT_AUDIO_BYPASS,
-          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property (gobject_klass, PROP_TEXT_BYPASS,
-      g_param_spec_boolean ("text-bypass", "text by-pass",
-          "Text by-pass mode", DEFAULT_TEXT_BYPASS,
-          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  element_class->change_state = GST_DEBUG_FUNCPTR (gst_fc_bin_change_state);
+  //element_class->change_state = GST_DEBUG_FUNCPTR (gst_fc_bin_change_state);
   element_class->request_new_pad =
       GST_DEBUG_FUNCPTR (gst_fc_bin_request_new_pad);
 
@@ -247,9 +219,6 @@ gst_fc_bin_init (GstFCBin * fcbin)
   GST_DEBUG_OBJECT (fcbin, "initializing");
 
   g_rec_mutex_init (&fcbin->lock);
-  g_cond_init (&fcbin->cond);
-  fcbin->blocked = FALSE;
-  fcbin->flushing = FALSE;
 
   fcbin->select[GST_FC_BIN_STREAM_AUDIO].channels = g_ptr_array_new ();
   fcbin->select[GST_FC_BIN_STREAM_AUDIO].media_list[0] = "audio/";
@@ -268,12 +237,6 @@ gst_fc_bin_init (GstFCBin * fcbin)
   fcbin->current_video = DEFAULT_CURRENT_VIDEO;
   fcbin->current_audio = DEFAULT_CURRENT_AUDIO;
   fcbin->current_text = DEFAULT_CURRENT_TEXT;
-
-  fcbin->video_bypass = DEFAULT_VIDEO_BYPASS;
-  fcbin->audio_bypass = DEFAULT_AUDIO_BYPASS;
-  fcbin->text_bypass = DEFAULT_TEXT_BYPASS;
-
-  fcbin->setup_caps = FALSE;
 }
 
 
@@ -285,22 +248,7 @@ gst_fc_bin_finalize (GObject * obj)
 
   fcbin = GST_FC_BIN (obj);
 
-  g_list_foreach (fcbin->video_caps_list, (GFunc) gst_object_unref, NULL);
-  g_list_free (fcbin->video_caps_list);
-  fcbin->video_caps_list = NULL;
-
-  g_list_foreach (fcbin->audio_caps_list, (GFunc) gst_object_unref, NULL);
-  g_list_free (fcbin->audio_caps_list);
-  fcbin->audio_caps_list = NULL;
-
-  g_list_foreach (fcbin->text_caps_list, (GFunc) gst_object_unref, NULL);
-  g_list_free (fcbin->text_caps_list);
-  fcbin->text_caps_list = NULL;
-
   g_rec_mutex_clear (&fcbin->lock);
-  g_cond_clear (&fcbin->cond);
-
-  fcbin->blocked = FALSE;
 
   G_OBJECT_CLASS (parent_class)->finalize (obj);
 }
@@ -536,15 +484,7 @@ gst_fc_bin_get_property (GObject * object, guint prop_id, GValue * value,
       g_value_set_int (value, fcbin->current_text);
       GST_FC_BIN_UNLOCK (fcbin);
       break;
-    case PROP_VIDEO_BYPASS:
-      g_value_set_boolean (value, fcbin->video_bypass);
-      break;
-    case PROP_AUDIO_BYPASS:
-      g_value_set_boolean (value, fcbin->audio_bypass);
-      break;
-    case PROP_TEXT_BYPASS:
-      g_value_set_boolean (value, fcbin->text_bypass);
-      break;
+
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -568,15 +508,7 @@ gst_fc_bin_set_property (GObject * object, guint prop_id,
     case PROP_CURRENT_TEXT:
       gst_fc_bin_set_current_text_stream (fcbin, g_value_get_int (value));
       break;
-    case PROP_VIDEO_BYPASS:
-      fcbin->video_bypass = g_value_get_boolean (value);
-      break;
-    case PROP_AUDIO_BYPASS:
-      fcbin->audio_bypass = g_value_get_boolean (value);
-      break;
-    case PROP_TEXT_BYPASS:
-      fcbin->text_bypass = g_value_get_boolean (value);
-      break;
+
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -659,307 +591,6 @@ selector_active_pad_changed (GObject * selector, GParamSpec * pspec,
     g_object_notify (G_OBJECT (fcbin), property);
 }
 
-guint
-get_next_sinkpad_idx (GstFCBin * fcbin)
-{
-  gchar *pad_name = NULL;
-  GstPad *sinkpad = NULL;
-  gboolean sinkpad_done = FALSE;
-  guint idx = 0;
-
-  while (sinkpad_done == FALSE) {
-    pad_name = g_strdup_printf ("sink%u", idx);
-    sinkpad = gst_element_get_static_pad (GST_ELEMENT (fcbin), pad_name);
-
-    if (sinkpad == NULL)
-      sinkpad_done = TRUE;
-    else
-      idx++;
-  }
-  g_free (pad_name);
-  GST_DEBUG_OBJECT (fcbin, "get_next_sinkpad_idx : idx = %d", idx);
-  return idx;
-}
-
-static gboolean
-gst_fc_bin_pad_event (GstPad * pad, GstObject * parent, GstEvent * event)
-{
-  gboolean res = TRUE;
-  GstFCBin *fcbin;
-  GstPad *srcpad = NULL;
-
-  fcbin = GST_FC_BIN (parent);
-
-  GST_FC_BIN_LOCK (fcbin);
-  srcpad = g_object_get_data (G_OBJECT (pad), "fcbin.srcpad");
-
-  switch (GST_EVENT_TYPE (event)) {
-    case GST_EVENT_FLUSH_START:
-      GST_DEBUG_OBJECT (fcbin, "gst_fc_bin_pad_event : GST_EVENT_FLUSH_START");
-      /* Unblock the pad if it's waiting */
-      guint flushing = 1;
-      g_object_set_data (G_OBJECT (pad), "flushing",
-          GINT_TO_POINTER (flushing));
-      GST_FC_BIN_BROADCAST (fcbin);
-      break;
-    default:
-      break;
-  }
-
-  GST_FC_BIN_UNLOCK (fcbin);
-
-  res = gst_pad_push_event (srcpad, event);
-  GST_DEBUG_OBJECT (fcbin,
-      "gst_fc_bin_pad_event : GST_EVENT_FLUSH_START res = %d", res);
-  return res;
-}
-
-/* must be called with the SELECTOR_LOCK, will block while the pad is blocked 
- * or return TRUE when flushing */
-static gboolean
-gst_fc_bin_wait (GstFCBin * fcbin, GstPad * pad)
-{
-  guint flushing;
-  flushing = GPOINTER_TO_INT (g_object_get_data (G_OBJECT (pad), "flushing"));
-  while (fcbin->blocked && !fcbin->flushing && flushing == 0) {
-    GST_DEBUG_OBJECT (fcbin, "gst_fc_bin_wait");
-    /* we can be unlocked here when we are shutting down (flushing) or when we
-     * get unblocked */
-    flushing = GPOINTER_TO_INT (g_object_get_data (G_OBJECT (pad), "flushing"));
-    GST_FC_BIN_WAIT (fcbin);
-  }
-  GST_DEBUG_OBJECT (fcbin, "gst_fc_bin_wait : return fcbin->flushing = %d",
-      fcbin->flushing);
-  return fcbin->flushing;
-}
-
-static GstFlowReturn
-gst_fc_bin_chain_bypass (GstPad * pad, GstObject * parent, GstBuffer * buffer)
-{
-  GstFCBin *fcbin;
-  GstFlowReturn ret;
-  GstPad *srcpad = NULL;
-  GstClockTime start_time;
-
-  fcbin = GST_FC_BIN (parent);
-
-  GST_DEBUG_OBJECT (fcbin,
-      "gst_fc_bin_chain_bypass : entering chain for buf %p with timestamp %"
-      GST_TIME_FORMAT, buffer, GST_TIME_ARGS (GST_BUFFER_TIMESTAMP (buffer)));
-
-  GST_FC_BIN_LOCK (fcbin);
-
-  /* wait or check for flushing */
-  if (gst_fc_bin_wait (fcbin, pad)) {
-    GST_FC_BIN_UNLOCK (fcbin);
-    goto flushing;
-  }
-
-  srcpad = g_object_get_data (G_OBJECT (pad), "fcbin.srcpad");
-  start_time = GST_BUFFER_TIMESTAMP (buffer);
-
-  if (GST_CLOCK_TIME_IS_VALID (start_time)) {
-    GST_DEBUG_OBJECT (fcbin,
-        "gst_fc_bin_chain_bypass : received start time %" GST_TIME_FORMAT,
-        GST_TIME_ARGS (start_time));
-    if (GST_BUFFER_DURATION_IS_VALID (buffer))
-      GST_DEBUG_OBJECT (fcbin,
-          "gst_fc_bin_chain_bypass : received end time %" GST_TIME_FORMAT,
-          GST_TIME_ARGS (start_time + GST_BUFFER_DURATION (buffer)));
-  }
-
-  GST_FC_BIN_BROADCAST (fcbin);
-  GST_FC_BIN_UNLOCK (fcbin);
-
-  if (srcpad) {
-    /* forward */
-    GST_DEBUG_OBJECT (fcbin,
-        "gst_fc_bin_chain_bypass : Forwarding buffer %p with timestamp %"
-        GST_TIME_FORMAT, buffer, GST_TIME_ARGS (GST_BUFFER_TIMESTAMP (buffer)));
-
-    ret = gst_pad_push (srcpad, gst_buffer_ref (buffer));
-  }
-
-done:
-  return ret;
-
-flushing:
-  {
-    GST_DEBUG_OBJECT (fcbin,
-        "gst_fc_bin_chain_bypass : We are flushing, discard buffer %p", buffer);
-    gst_buffer_unref (buffer);
-    ret = GST_FLOW_FLUSHING;
-    goto done;
-  }
-}
-
-static GstIterator *
-gst_fc_bin_pad_iterate_linked_pads (GstPad * pad, GstObject * parent)
-{
-  GstFCBin *fcbin;
-  GstPad *opad;
-  GstIterator *it = NULL;
-
-  fcbin = GST_FC_BIN (parent);
-  GST_DEBUG_OBJECT (fcbin, "gst_fc_bin_pad_iterate_linked_pads : pad = %s",
-      gst_pad_get_name (pad));
-
-  //GST_FC_BIN_LOCK (fcbin);
-
-  opad = gst_object_ref (g_object_get_data (G_OBJECT (pad), "fcbin.srcpad"));
-
-  if (opad) {
-    GValue val = { 0, };
-    g_value_init (&val, GST_TYPE_PAD);
-    g_value_set_object (&val, opad);
-    it = gst_iterator_new_single (GST_TYPE_PAD, &val);
-    g_value_unset (&val);
-
-    gst_object_unref (opad);
-  }
-  //GST_FC_BIN_UNLOCK (fcbin);
-
-  return it;
-}
-
-GstCaps *
-get_caps_by_type (GstFCBin * fcbin, gchar * type)
-{
-  GstCaps *caps = NULL;
-  GList *walk = NULL;
-  GST_DEBUG_OBJECT (fcbin, "get_caps_by_type : type = %s", type);
-  if (g_str_has_prefix (type, "audio/"))
-    walk = fcbin->audio_caps_list;
-  else if (g_str_has_prefix (type, "video/"))
-    walk = fcbin->video_caps_list;
-
-  for (; walk; walk = g_list_next (walk)) {
-    GstFCCaps *caps_prop = NULL;
-    caps_prop = (GstFCCaps *) walk->data;
-    if (caps_prop->used == FALSE) {
-      caps = gst_caps_ref (caps_prop->caps);
-      caps_prop->used = TRUE;
-      goto done;
-    }
-  }
-
-done:
-  GST_DEBUG_OBJECT (fcbin, "get_caps_by_type : caps = %s",
-      gst_caps_to_string (caps));
-  return caps;
-}
-
-void
-setup_bypass (GstFCBin * fcbin, GstCaps * caps)
-{
-  GstStructure *s;
-
-  s = gst_caps_get_structure (caps, 0);
-  GST_DEBUG_OBJECT (fcbin, "setup_bypass : caps = %s",
-      gst_caps_to_string (caps));
-  if (g_str_has_prefix (gst_structure_get_name (s), "video/")) {
-    if (gst_structure_has_field (s, "typeof3D")) {
-      GST_DEBUG_OBJECT (fcbin, "setup_bypass : has typeof3D");
-      fcbin->video_bypass = TRUE;
-    }
-  }
-}
-
-void
-setup_caps (GstFCBin * fcbin)
-{
-  GstStructure *structure = NULL;
-  GValue value = { 0, };
-  GstIterator *iter = NULL;
-  gchar *name = NULL;
-  gboolean done = FALSE;
-  GstElement *element = NULL;
-  GstElement *multiqueue = NULL;
-  gboolean src_pad_done = FALSE;
-  guint i = 0;
-  GstElement *lpbin;
-
-  lpbin = (GstElement *) gst_element_get_parent (GST_ELEMENT (fcbin));
-  iter = gst_bin_iterate_recurse (GST_BIN (lpbin));
-
-  while (!done) {
-    switch (gst_iterator_next (iter, &value)) {
-      case GST_ITERATOR_OK:
-        element = GST_ELEMENT (g_value_get_object (&value));
-        name = gst_object_get_name (GST_OBJECT (element));
-
-        if (!strcmp (name, "multiqueue0")) {
-          while (src_pad_done == FALSE) {
-            GstPad *pad = NULL;
-            GstCaps *caps = NULL;
-            gchar *caps_str;
-            gchar *pad_name;
-
-            pad_name = g_strdup_printf ("src_%d", i++);
-            pad = gst_element_get_static_pad (element, pad_name);
-
-            if (pad != NULL) {
-              if ((caps = gst_pad_query_caps (pad, 0)) != NULL) {
-                structure = gst_caps_get_structure (caps, 0);
-                if (structure != NULL) {
-                  caps_str = gst_caps_to_string (caps);
-                  if (g_str_has_prefix (caps_str, "audio/")) {
-                    GstFCCaps *audio_caps = NULL;
-                    setup_bypass (fcbin, caps);
-                    audio_caps = g_slice_alloc0 (sizeof (GstFCCaps));
-                    audio_caps->caps = gst_caps_ref (caps);
-                    audio_caps->used = FALSE;
-                    fcbin->audio_caps_list =
-                        g_list_append (fcbin->audio_caps_list,
-                        (GstFCCaps *) audio_caps);
-                  } else if (g_str_has_prefix (caps_str, "video/")
-                      || g_str_has_prefix (caps_str, "image/")) {
-                    GstFCCaps *video_caps = NULL;
-                    setup_bypass (fcbin, caps);
-                    video_caps = g_slice_alloc0 (sizeof (GstFCCaps));
-                    video_caps->caps = gst_caps_ref (caps);
-                    video_caps->used = FALSE;
-                    fcbin->video_caps_list =
-                        g_list_append (fcbin->video_caps_list,
-                        (GstFCCaps *) video_caps);
-                  }
-                  g_free (caps_str);
-                  gst_caps_unref (caps);
-                }
-                g_free (pad_name);
-                gst_object_unref (pad);
-              } else {
-                src_pad_done = TRUE;
-                break;
-              }
-            } else {
-              src_pad_done = TRUE;
-              break;
-            }
-          }
-        }
-
-        g_free (name);
-        element = NULL;
-        break;
-      case GST_ITERATOR_RESYNC:
-        gst_iterator_resync (iter);
-        g_value_unset (&value);
-        break;
-      case GST_ITERATOR_ERROR:
-        g_value_unset (&value);
-        done = TRUE;
-        break;
-      case GST_ITERATOR_DONE:
-        g_value_unset (&value);
-        done = TRUE;
-        break;
-    }
-  }
-  gst_iterator_free (iter);
-
-}
-
 static GstPad *
 gst_fc_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
     const gchar * name, const GstCaps * caps)
@@ -972,64 +603,11 @@ gst_fc_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
   GstPad *sinkpad, *ghost_sinkpad;
   GstCaps *in_caps;
 
-  fcbin = GST_FC_BIN (element);
 
-  if (fcbin->setup_caps == FALSE) {
-    setup_caps (fcbin);
-    fcbin->setup_caps = TRUE;
-  }
+  fcbin = GST_FC_BIN (element);
 
   s = gst_caps_get_structure (caps, 0);
   in_name = gst_structure_get_name (s);
-
-  GST_DEBUG_OBJECT (fcbin, "gst_fc_bin_request_new_pad : in_name = %s",
-      in_name);
-
-  if ((g_str_has_prefix (in_name, "video/") && fcbin->video_bypass)
-      || (g_str_has_prefix (in_name, "audio/") && fcbin->audio_bypass)
-      || (g_str_has_prefix (in_name, "text/") && fcbin->text_bypass)) {
-    GstPadTemplate *pad_tmpl = NULL;
-    GstPad *srcpad = NULL;
-    guint idx = get_next_sinkpad_idx (fcbin);
-    guint flushing = 0;
-
-    gchar *sinkpad_name = g_strdup_printf ("sink%u", idx);
-    gchar *srcpad_name = g_strdup_printf ("src%u", idx);
-
-    pad_tmpl = gst_static_pad_template_get (&gst_fc_bin_sink_pad_template);
-    sinkpad = gst_pad_new_from_template (pad_tmpl, sinkpad_name);
-    gst_object_unref (pad_tmpl);
-    g_free (sinkpad_name);
-
-    pad_tmpl = gst_static_pad_template_get (&gst_fc_bin_src_pad_template);
-    srcpad = gst_pad_new_from_template (pad_tmpl, srcpad_name);
-    gst_object_unref (pad_tmpl);
-    g_free (srcpad_name);
-
-    gst_pad_set_iterate_internal_links_function (sinkpad,
-        GST_DEBUG_FUNCPTR (gst_fc_bin_pad_iterate_linked_pads));
-
-    gst_pad_set_chain_function (sinkpad,
-        GST_DEBUG_FUNCPTR (gst_fc_bin_chain_bypass));
-
-    gst_pad_set_event_function (sinkpad,
-        GST_DEBUG_FUNCPTR (gst_fc_bin_pad_event));
-
-    gst_pad_set_active (srcpad, TRUE);
-    gst_pad_set_active (sinkpad, TRUE);
-
-    gst_element_add_pad (GST_ELEMENT_CAST (fcbin), srcpad);
-    gst_element_add_pad (GST_ELEMENT_CAST (fcbin), sinkpad);
-    g_object_set_data (G_OBJECT (sinkpad), "fcbin.srcpad", srcpad);
-    g_object_set_data (G_OBJECT (sinkpad), "fcbin.caps",
-        get_caps_by_type (fcbin, in_name));
-    g_object_set_data (G_OBJECT (sinkpad), "flushing",
-        GINT_TO_POINTER (flushing));
-
-    gst_pad_link (srcpad, sinkpad);
-
-    return sinkpad;
-  }
 
   for (i = 0; i < GST_FC_BIN_STREAM_LAST; i++) {
     for (j = 0; fcbin->select[i].media_list[j]; j++) {
@@ -1084,8 +662,6 @@ gst_fc_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
       gst_element_add_pad (element, ghost_sinkpad);
       g_object_set_data (G_OBJECT (ghost_sinkpad), "fcbin.srcpad",
           select->srcpad);
-      g_object_set_data (G_OBJECT (ghost_sinkpad), "fcbin.caps",
-          get_caps_by_type (fcbin, in_name));
 
       g_ptr_array_add (select->channels, sinkpad);
     }
@@ -1174,7 +750,7 @@ array_has_value (const gchar * values[], const gchar * value)
   return FALSE;
 }
 
-
+/*
 static GstStateChangeReturn
 gst_fc_bin_change_state (GstElement * element, GstStateChange transition)
 {
@@ -1187,17 +763,6 @@ gst_fc_bin_change_state (GstElement * element, GstStateChange transition)
     case GST_STATE_CHANGE_NULL_TO_READY:
       break;
     case GST_STATE_CHANGE_READY_TO_PAUSED:
-      GST_FC_BIN_LOCK (fcbin);
-      fcbin->blocked = FALSE;
-      fcbin->flushing = FALSE;
-      GST_FC_BIN_UNLOCK (fcbin);
-      break;
-    case GST_STATE_CHANGE_PAUSED_TO_READY:
-      GST_FC_BIN_LOCK (fcbin);
-      fcbin->blocked = FALSE;
-      fcbin->flushing = TRUE;
-      GST_FC_BIN_BROADCAST (fcbin);
-      GST_FC_BIN_UNLOCK (fcbin);
       break;
     case GST_STATE_CHANGE_READY_TO_NULL:
       break;
@@ -1213,7 +778,6 @@ gst_fc_bin_change_state (GstElement * element, GstStateChange transition)
   switch (transition) {
     case GST_STATE_CHANGE_READY_TO_NULL:
     {
-/*
       GstIterator *it;
       GstPad *fcbin_sinkpad;
       gboolean done = FALSE;
@@ -1246,18 +810,18 @@ gst_fc_bin_change_state (GstElement * element, GstStateChange transition)
       g_value_unset (&item);
       gst_iterator_free (it);
       GST_FC_BIN_UNLOCK (fcbin);
-*/
       break;
     }
     default:
       break;
   }
-  return ret;
+  return ret;*/
 
   /* ERRORS */
-failure:
+/*failure:
   {
     return ret;
   }
 
 }
+*/
