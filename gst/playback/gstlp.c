@@ -40,10 +40,6 @@ plugin_init (GstPlugin * plugin)
           GST_TYPE_LP_SINK))
     return FALSE;
 
-  if (!gst_element_register (plugin, "lpsrcbin", GST_RANK_PRIMARY,
-          GST_TYPE_LP_SRC_BIN))
-    return FALSE;
-
   return TRUE;
 }
 
