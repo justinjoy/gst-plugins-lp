@@ -80,7 +80,7 @@ static void gst_lp_sink_handle_message (GstBin * bin, GstMessage * message);
 void gst_lp_sink_set_sink (GstLpSink * lpsink, GstLpSinkType type,
     GstElement * sink);
 GstElement *gst_lp_sink_get_sink (GstLpSink * lpsink, GstLpSinkType type);
-static void new_sample (GstElement * sink);
+static GstFlowReturn gst_lp_sink_new_sample (GstElement * sink);
 
 static void
 _do_init (GType type)
@@ -323,7 +323,7 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
       break;
     case GST_LP_SINK_TYPE_TEXT:
       g_object_set (sink_element, "emit-signals", TRUE, NULL);
-      g_signal_connect (sink_element, "new-sample", G_CALLBACK (new_sample),
+      g_signal_connect (sink_element, "new-sample", G_CALLBACK (gst_lp_sink_new_sample),
           NULL);
       break;
   }
@@ -680,8 +680,8 @@ gst_lp_sink_get_sink (GstLpSink * lpsink, GstLpSinkType type)
   return result;
 }
 
-static void
-new_sample (GstElement * sink)
+static GstFlowReturn
+gst_lp_sink_new_sample (GstElement * sink)
 {
   GstSample *sample;
   GstBuffer *buffer;
@@ -691,16 +691,18 @@ new_sample (GstElement * sink)
   GstPad *pad;
 
   pad = gst_element_get_static_pad (sink, "sink");
-  caps = gst_pad_get_current_caps (pad);
 
   g_signal_emit_by_name (sink, "pull-sample", &sample);
 
   if (sample) {
-    buffer = gst_sample_get_buffer (sample);
+    GstSample *out_sample;
+    out_sample =
+        GST_SAMPLE_CAST (gst_mini_object_copy (GST_MINI_OBJECT_CONST_CAST
+            (sample)));
 
     structure =
-        gst_structure_new ("subtitle_data", "caps", GST_TYPE_CAPS, caps,
-        "buffer", GST_TYPE_BUFFER, buffer, NULL);
+        gst_structure_new ("subtitle_data", "sample", GST_TYPE_SAMPLE,
+        out_sample, NULL);
 
     gst_element_post_message (sink,
         gst_message_new_application (GST_OBJECT_CAST (sink), structure));
@@ -708,6 +710,5 @@ new_sample (GstElement * sink)
     gst_sample_unref (sample);
   }
 
-  if (caps)
-    gst_caps_unref (caps);
+  return GST_FLOW_OK;
 }
