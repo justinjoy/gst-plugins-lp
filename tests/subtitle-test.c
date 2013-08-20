@@ -12,7 +12,7 @@ bus_call (GstBus * bus, GstMessage * message, gpointer data)
   switch (GST_MESSAGE_TYPE (message)) {
     case GST_MESSAGE_APPLICATION:
     {
-      GstSample *sample;
+      gint num_track = -1;
       GstBuffer *buf;
       gboolean bitmap = FALSE;
       GstCaps *caps;
@@ -24,20 +24,21 @@ bus_call (GstBus * bus, GstMessage * message, gpointer data)
         break;
       }
 
-      sample = gst_value_get_sample (gst_structure_get_value (structure, "sample"));
+      num_track =
+          g_value_get_int (gst_structure_get_value (structure, "track-num"));
+      caps = gst_value_get_caps (gst_structure_get_value (structure, "caps"));
+      buf =
+          gst_value_get_buffer (gst_structure_get_value (structure, "buffer"));
 
-      if (!sample) {
-        GST_WARNING ("invalid sample value");
+      if (num_track < 0 || !buf) {
+        GST_WARNING ("invalid structure value");
         break;
       }
 
-      caps = gst_sample_get_caps (sample);
-      buf = gst_sample_get_buffer (sample);
-
-      GST_WARNING ("buf is %p, caps is %s", buf, gst_caps_to_string (caps));
-
-      /* application should do unref after get the sample data */
-      gst_sample_unref (sample);
+      GST_WARNING ("number of track is %d, buf is %p, caps is %s", num_track,
+          buf, gst_caps_to_string (caps));
+      GST_WARNING ("buf pts %d, size %d, offset %d", GST_BUFFER_PTS (buf),
+          GST_BUFFER_DURATION (buf), GST_BUFFER_OFFSET (buf));
     }
       break;
     case GST_MESSAGE_EOS:
