@@ -24,7 +24,8 @@ bus_call (GstBus * bus, GstMessage * message, gpointer data)
         break;
       }
 
-      sample = gst_value_get_sample (gst_structure_get_value (structure, "sample"));
+      sample =
+          gst_value_get_sample (gst_structure_get_value (structure, "sample"));
 
       if (!sample) {
         GST_WARNING ("invalid sample value");

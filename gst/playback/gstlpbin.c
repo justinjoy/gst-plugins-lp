@@ -92,6 +92,10 @@ static gboolean autoplug_continue_signal (GstElement * element, GstPad * pad,
     GstCaps * caps, GstLpBin * lpbin);
 static GValueArray *autoplug_factories_signal (GstElement * decodebin,
     GstPad * pad, GstCaps * caps, GstLpBin * lpbin);
+static void video_multiple_stream_signal (GstElement * fcbin,
+    GParamSpec * pspec, GstLpBin * lpbin);
+static void audio_multiple_stream_signal (GstElement * fcbin,
+    GParamSpec * pspec, GstLpBin * lpbin);
 
 /* private functions */
 static gboolean gst_lp_bin_setup_element (GstLpBin * lpbin);
@@ -857,6 +861,12 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
       G_CALLBACK (autoplug_continue_signal), lpbin);
 
   lpbin->fcbin = gst_element_factory_make ("fcbin", NULL);
+  lpbin->video_multiple_stream_id =
+      g_signal_connect (lpbin->fcbin, "notify::video-multi",
+      G_CALLBACK (video_multiple_stream_signal), lpbin);
+  lpbin->audio_multiple_stream_id =
+      g_signal_connect (lpbin->fcbin, "notify::audio-multi",
+      G_CALLBACK (audio_multiple_stream_signal), lpbin);
   gst_bin_add (GST_BIN_CAST (lpbin), lpbin->fcbin);
 
   lpbin->lpsink = gst_element_factory_make ("lpsink", NULL);
@@ -947,6 +957,8 @@ gst_lp_bin_deactive (GstLpBin * lpbin)
   REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->unknown_type_id);
   REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->autoplug_factories_id);
   REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->autoplug_continue_id);
+  REMOVE_SIGNAL (lpbin->fcbin, lpbin->video_multiple_stream_id);
+  REMOVE_SIGNAL (lpbin->fcbin, lpbin->audio_multiple_stream_id);
   REMOVE_SIGNAL (lpbin, lpbin->caps_video_id);
   if (lpbin->uridecodebin) {
     gst_element_set_state (lpbin->uridecodebin, GST_STATE_NULL);
@@ -1366,6 +1378,35 @@ gst_lp_bin_autoplug_factories (GstElement * element, GstPad * pad,
   gst_plugin_feature_list_free (mylist);
 
   return result;
+}
+
+static void
+video_multiple_stream_signal (GstElement * fcbin, GParamSpec * pspec,
+    GstLpBin * lpbin)
+{
+  GST_LOG_OBJECT (lpbin, "video_multiple_stream_signal");
+  gboolean multiple = FALSE;
+
+  g_object_get (lpbin->fcbin, "video-multi", &multiple, NULL);
+
+  GST_OBJECT_LOCK (lpbin);
+  gst_lp_sink_set_multiple_stream (lpbin->lpsink, "video", multiple);
+  GST_OBJECT_UNLOCK (lpbin);
+}
+
+static void
+audio_multiple_stream_signal (GstElement * fcbin, GParamSpec * pspec,
+    GstLpBin * lpbin)
+{
+  GST_LOG_OBJECT (lpbin, "audio_multiple_stream_signal");
+
+  gboolean multiple = FALSE;
+
+  g_object_get (lpbin->fcbin, "audio-multi", &multiple, NULL);
+
+  GST_OBJECT_LOCK (lpbin);
+  gst_lp_sink_set_multiple_stream (lpbin->lpsink, "audio", multiple);
+  GST_OBJECT_UNLOCK (lpbin);
 }
 
 static GstStructure *

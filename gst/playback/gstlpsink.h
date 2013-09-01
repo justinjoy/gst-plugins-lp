@@ -34,6 +34,7 @@ G_BEGIN_DECLS
 #define GST_LP_SINK_GET_LOCK(bin) (&((GstLpSink*)(bin))->lock)
 #define GST_LP_SINK_LOCK(bin) (g_rec_mutex_lock (GST_LP_SINK_GET_LOCK(bin)))
 #define GST_LP_SINK_UNLOCK(bin) (g_rec_mutex_unlock (GST_LP_SINK_GET_LOCK(bin)))
+typedef struct _GstSinkChain GstSinkChain;
 typedef struct _GstLpSink GstLpSink;
 typedef struct _GstLpSinkClass GstLpSinkClass;
 
@@ -43,16 +44,34 @@ struct _GstLpSink
 
   GRecMutex lock;               /* to protect group switching */
 
+  GstElement *video_osel;
+  GstElement *audio_osel;
+  GstElement *text_osel;
+
+  GstElement *stream_synchronizer;
+
   GstElement *video_sink;
   GstElement *audio_sink;
+  GstElement *text_sink;
   GstPad *audio_pad;
   GstPad *video_pad;
+  GstPad *text_pad;
 
   GstFlowReturn ret;
 
   gboolean thumbnail_mode;
   guint video_resource;
   guint audio_resource;
+
+  gboolean video_multiple_stream;
+  gboolean audio_multiple_stream;
+
+  GList *sink_chain_list;
+  guint nb_video_bin;
+  guint nb_audio_bin;
+  guint nb_text_bin;
+
+  gulong src_pad_added_id;
 };
 
 struct _GstLpSinkClass
@@ -69,6 +88,17 @@ typedef enum
   GST_LP_SINK_TYPE_FLUSHING = 10
 } GstLpSinkType;
 
+struct _GstSinkChain
+{
+  GstBin *bin;
+  GstElement *queue;
+  GstElement *sink;
+  GstCaps *caps;
+  GstLpSinkType type;
+  GstPad *srcpad_stream_synchronizer;
+  GstPad *sinkpad_stream_synchronizer;
+};
+
 GType gst_lp_sink_get_type (void);
 
 void gst_lp_sink_set_sink (GstLpSink * lpsink, GstLpSinkType type,
@@ -76,6 +106,7 @@ void gst_lp_sink_set_sink (GstLpSink * lpsink, GstLpSinkType type,
 GstElement *gst_lp_sink_get_sink (GstLpSink * lpsink, GstLpSinkType type);
 void gst_lp_sink_set_thumbnail_mode (GstLpSink * lpsink,
     gboolean thumbnail_mode);
-
+void gst_lp_sink_set_multiple_stream (GstLpSink * lpsink, gchar * type,
+    gboolean multiple_stream);
 G_END_DECLS
 #endif // __GST_LP_SINK_H__
