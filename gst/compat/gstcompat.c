@@ -29,6 +29,7 @@
 #include "gstfcbin.h"
 #include "gstfakevdec.h"
 #include "gstfakeadec.h"
+#include "gstreversefunnel.h"
 
 static gboolean
 plugin_init (GstPlugin * plugin)
@@ -43,6 +44,10 @@ plugin_init (GstPlugin * plugin)
 
   if (!gst_element_register (plugin, "fcbin", GST_RANK_PRIMARY,
           GST_TYPE_FC_BIN))
+    return FALSE;
+
+  if (!gst_element_register (plugin, "reversefunnel", GST_RANK_PRIMARY,
+          GST_TYPE_REVERSE_FUNNEL))
     return FALSE;
 
   return TRUE;
