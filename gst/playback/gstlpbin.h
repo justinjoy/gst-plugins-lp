@@ -69,8 +69,6 @@ struct _GstLpBin
   gulong autoplug_factories_id;
   gulong autoplug_continue_id;
   gulong caps_video_id;
-  gulong video_multiple_stream_id;
-  gulong audio_multiple_stream_id;
 
   guint naudio;
   guint nvideo;

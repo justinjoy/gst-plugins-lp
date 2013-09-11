@@ -31,14 +31,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* signals */
-enum
-{
-  SIGNAL_VIDEO_MULTIPLE_STREAM,
-  SIGNAL_AUDIO_MULTIPLE_STREAM,
-  LAST_SIGNAL
-};
-
 GST_DEBUG_CATEGORY_STATIC (fc_bin_debug);
 #define GST_CAT_DEFAULT fc_bin_debug
 
@@ -50,9 +42,6 @@ G_DEFINE_TYPE (GstFCBin, gst_fc_bin, GST_TYPE_BIN);
 #define DEFAULT_N_AUDIO         0
 #define DEFAULT_CURRENT_AUDIO   0
 #define DEFAULT_N_TEXT          0
-#define DEFAULT_VIDEO_MULTI FALSE
-#define DEFAULT_AUDIO_MULTI FALSE
-#define DEFAULT_TEXT_MULTI FALSE
 
 enum
 {
@@ -62,13 +51,8 @@ enum
   PROP_N_AUDIO,
   PROP_CURRENT_AUDIO,
   PROP_N_TEXT,
-  PROP_VIDEO_MULTI,
-  PROP_AUDIO_MULTI,
-  PROP_TEXT_MULTI,
   PROP_LAST
 };
-
-static guint gst_fc_bin_signals[LAST_SIGNAL] = { 0 };
 
 static void gst_fc_bin_finalize (GObject * obj);
 static void gst_fc_bin_set_property (GObject * object, guint prop_id,
@@ -210,31 +194,6 @@ gst_fc_bin_class_init (GstFCBinClass * klass)
           "Total number of text streams", 0, G_MAXINT, 0,
           G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
 
-  g_object_class_install_property (gobject_klass, PROP_VIDEO_MULTI,
-      g_param_spec_boolean ("video-multi", "Video multi",
-          "Video multiple stream mode", DEFAULT_VIDEO_MULTI,
-          G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property (gobject_klass, PROP_AUDIO_MULTI,
-      g_param_spec_boolean ("audio-multi", "Audio multi",
-          "Audio multiple stream mode", DEFAULT_AUDIO_MULTI,
-          G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property (gobject_klass, PROP_TEXT_MULTI,
-      g_param_spec_boolean ("text-multi", "Text multi",
-          "Text multiplle stream mode", DEFAULT_TEXT_MULTI,
-          G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
-
-  gst_fc_bin_signals[SIGNAL_VIDEO_MULTIPLE_STREAM] =
-      g_signal_new ("video-multiple-stream", G_TYPE_FROM_CLASS (klass),
-      G_SIGNAL_RUN_LAST, 0, NULL, NULL,
-      g_cclosure_marshal_generic, G_TYPE_NONE, 1, G_TYPE_BOOLEAN);
-
-  gst_fc_bin_signals[SIGNAL_AUDIO_MULTIPLE_STREAM] =
-      g_signal_new ("audio-multiple-stream", G_TYPE_FROM_CLASS (klass),
-      G_SIGNAL_RUN_LAST, 0, NULL, NULL,
-      g_cclosure_marshal_generic, G_TYPE_NONE, 1, G_TYPE_BOOLEAN);
-
   //element_class->change_state = GST_DEBUG_FUNCPTR (gst_fc_bin_change_state);
   element_class->request_new_pad =
       GST_DEBUG_FUNCPTR (gst_fc_bin_request_new_pad);
@@ -268,12 +227,6 @@ gst_fc_bin_init (GstFCBin * fcbin)
 
   fcbin->current_video = DEFAULT_CURRENT_VIDEO;
   fcbin->current_audio = DEFAULT_CURRENT_AUDIO;
-
-  fcbin->video_multi = DEFAULT_VIDEO_MULTI;
-  fcbin->audio_multi = DEFAULT_AUDIO_MULTI;
-  fcbin->text_multi = DEFAULT_TEXT_MULTI;
-
-  fcbin->setup_caps = FALSE;
 }
 
 
@@ -464,15 +417,6 @@ gst_fc_bin_get_property (GObject * object, guint prop_id, GValue * value,
       GST_FC_BIN_UNLOCK (fcbin);
       break;
     }
-    case PROP_VIDEO_MULTI:
-      g_value_set_boolean (value, fcbin->video_multi);
-      break;
-    case PROP_AUDIO_MULTI:
-      g_value_set_boolean (value, fcbin->audio_multi);
-      break;
-    case PROP_TEXT_MULTI:
-      g_value_set_boolean (value, fcbin->text_multi);
-      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -576,178 +520,6 @@ selector_active_pad_changed (GObject * selector, GParamSpec * pspec,
     g_object_notify (G_OBJECT (fcbin), property);
 }
 
-void
-setup_caps_by_parse_element (GstFCBin * fcbin)
-{
-  GValue value = { 0, };
-  GstIterator *iter = NULL;
-  gboolean done = FALSE;
-  GstElement *element = NULL;
-  GstElement *multiqueue = NULL;
-  gboolean src_pad_done = FALSE;
-  guint i = 0;
-  GstElement *lpbin;
-  GstElementFactory *factory = NULL;
-  const gchar *klass = NULL;
-
-  lpbin = (GstElement *) gst_element_get_parent (GST_ELEMENT (fcbin));
-  iter = gst_bin_iterate_recurse (GST_BIN (lpbin));
-
-  while (!done) {
-    switch (gst_iterator_next (iter, &value)) {
-      case GST_ITERATOR_OK:
-        element = GST_ELEMENT (g_value_get_object (&value));
-        factory = gst_element_get_factory (element);
-        klass = gst_element_factory_get_klass (factory);
-
-        if (strstr (klass, "Parse") || strstr (klass, "Demuxer")) {
-          GstPad *pad = NULL;
-          GstCaps *caps = NULL;
-          gchar *caps_str;
-
-          pad = gst_element_get_static_pad (element, "src");
-
-          if (pad != NULL) {
-            if ((caps = gst_pad_query_caps (pad, 0)) != NULL) {
-              GST_DEBUG_OBJECT (fcbin,
-                  "setup_caps_by_parse_element : caps = %s",
-                  gst_caps_to_string (caps));
-              caps_str = gst_caps_to_string (caps);
-              if (g_str_has_prefix (caps_str, "audio/")) {
-                setup_multiple_stream (fcbin, caps);
-              } else if (g_str_has_prefix (caps_str, "video/")
-                  || g_str_has_prefix (caps_str, "image/")) {
-                setup_multiple_stream (fcbin, caps);
-              }
-              g_free (caps_str);
-              gst_caps_unref (caps);
-              gst_object_unref (pad);
-            }
-          }
-          g_value_unset (&value);
-          done = TRUE;
-        }
-        element = NULL;
-        break;
-      case GST_ITERATOR_RESYNC:
-        gst_iterator_resync (iter);
-        g_value_unset (&value);
-        break;
-      case GST_ITERATOR_ERROR:
-        g_value_unset (&value);
-        done = TRUE;
-        break;
-      case GST_ITERATOR_DONE:
-        g_value_unset (&value);
-        done = TRUE;
-        break;
-    }
-  }
-  gst_iterator_free (iter);
-}
-
-void
-setup_multiple_stream (GstFCBin * fcbin, GstCaps * caps)
-{
-  GstStructure *s;
-
-  s = gst_caps_get_structure (caps, 0);
-  GST_DEBUG_OBJECT (fcbin, "setup_bypass : caps = %s",
-      gst_caps_to_string (caps));
-  if (g_str_has_prefix (gst_structure_get_name (s), "video/")) {
-    if (gst_structure_has_field (s, "typeof3D")) {
-      GST_DEBUG_OBJECT (fcbin, "setup_bypass : has typeof3D");
-      fcbin->video_multi = TRUE;
-    }
-  }
-}
-
-void
-setup_caps (GstFCBin * fcbin)
-{
-  GstStructure *structure = NULL;
-  GValue value = { 0, };
-  GstIterator *iter = NULL;
-  gchar *name = NULL;
-  gboolean done = FALSE;
-  GstElement *element = NULL;
-  GstElement *multiqueue = NULL;
-  gboolean src_pad_done = FALSE;
-  guint i = 0;
-  GstElement *lpbin;
-  gboolean exist_multiqueue = FALSE;
-
-  lpbin = (GstElement *) gst_element_get_parent (GST_ELEMENT (fcbin));
-  iter = gst_bin_iterate_recurse (GST_BIN (lpbin));
-
-  while (!done) {
-    switch (gst_iterator_next (iter, &value)) {
-      case GST_ITERATOR_OK:
-        element = GST_ELEMENT (g_value_get_object (&value));
-        name = gst_object_get_name (GST_OBJECT (element));
-
-        if (!strcmp (name, "multiqueue0")) {
-          exist_multiqueue = TRUE;
-          while (src_pad_done == FALSE) {
-            GstPad *pad = NULL;
-            GstCaps *caps = NULL;
-            gchar *caps_str;
-            gchar *pad_name;
-
-            pad_name = g_strdup_printf ("src_%d", i++);
-            pad = gst_element_get_static_pad (element, pad_name);
-
-            if (pad != NULL) {
-              if ((caps = gst_pad_query_caps (pad, 0)) != NULL) {
-                structure = gst_caps_get_structure (caps, 0);
-                if (structure != NULL) {
-                  caps_str = gst_caps_to_string (caps);
-                  if (g_str_has_prefix (caps_str, "audio/")) {
-                    setup_multiple_stream (fcbin, caps);
-                  } else if (g_str_has_prefix (caps_str, "video/")
-                      || g_str_has_prefix (caps_str, "image/")) {
-                    setup_multiple_stream (fcbin, caps);
-                  }
-                  g_free (caps_str);
-                  gst_caps_unref (caps);
-                }
-                g_free (pad_name);
-                gst_object_unref (pad);
-              } else {
-                src_pad_done = TRUE;
-                break;
-              }
-            } else {
-              src_pad_done = TRUE;
-              break;
-            }
-          }
-        }
-
-        g_free (name);
-        element = NULL;
-        break;
-      case GST_ITERATOR_RESYNC:
-        gst_iterator_resync (iter);
-        g_value_unset (&value);
-        break;
-      case GST_ITERATOR_ERROR:
-        g_value_unset (&value);
-        done = TRUE;
-        break;
-      case GST_ITERATOR_DONE:
-        g_value_unset (&value);
-        done = TRUE;
-        break;
-    }
-  }
-  gst_iterator_free (iter);
-
-  if (exist_multiqueue == FALSE)
-    setup_caps_by_parse_element (fcbin);
-
-}
-
 static GstPad *
 gst_fc_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
     const gchar * name, const GstCaps * caps)
@@ -762,17 +534,6 @@ gst_fc_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
   gboolean is_subtitle = FALSE;
 
   fcbin = GST_FC_BIN (element);
-
-  if (fcbin->setup_caps == FALSE) {
-    setup_caps (fcbin);
-    fcbin->setup_caps = TRUE;
-    g_object_notify (G_OBJECT (fcbin), "video-multi");
-    g_signal_emit (fcbin, gst_fc_bin_signals[SIGNAL_VIDEO_MULTIPLE_STREAM], 0,
-        fcbin->video_multi);
-    g_object_notify (G_OBJECT (fcbin), "audio-multi");
-    g_signal_emit (fcbin, gst_fc_bin_signals[SIGNAL_AUDIO_MULTIPLE_STREAM], 0,
-        fcbin->audio_multi);
-  }
 
   s = gst_caps_get_structure (caps, 0);
   in_name = gst_structure_get_name (s);
@@ -791,19 +552,17 @@ gst_fc_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
     goto unknown_type;
 
   if (select->selector == NULL) {
-    if ((i == GST_FC_BIN_STREAM_VIDEO && !fcbin->video_multi)
-        || (i == GST_FC_BIN_STREAM_AUDIO && !fcbin->audio_multi)) {
-      select->selector = gst_element_factory_make ("input-selector", NULL);
-    } else
+    if (is_subtitle)
       select->selector = gst_element_factory_make ("funnel", NULL);
+    else
+      select->selector = gst_element_factory_make ("input-selector", NULL);
 
     if (select->selector == NULL) {
       /* gst_element_post_message (GST_ELEMENT_CAST (fcbin), 
          gst_missing_element_message_new (GST_ELEMENT_CAST (fcbin),
          "input-selector")); */
     } else {
-      if ((i == GST_FC_BIN_STREAM_VIDEO && !fcbin->video_multi)
-          || (i == GST_FC_BIN_STREAM_AUDIO && !fcbin->audio_multi)) {
+      if (!is_subtitle) {
         g_object_set (select->selector, "sync-streams", TRUE, NULL);
 
         g_signal_connect (select->selector, "notify::active-pad",

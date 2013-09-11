@@ -67,11 +67,6 @@ struct _GstFCBin
   gint current_audio;           /* the currently selected stream */
   gint current_text;            /* the currently selected stream */
 
-  gboolean setup_caps;
-  gboolean video_multi;
-  gboolean audio_multi;
-  gboolean text_multi;
-
   GstFCSelect select[GST_FC_BIN_STREAM_LAST];
 };
 
