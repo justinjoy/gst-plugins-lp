@@ -285,15 +285,6 @@ gst_lp_sink_set_thumbnail_mode (GstLpSink * lpsink, gboolean thumbnail_mode)
 {
   GST_DEBUG_OBJECT (lpsink, "set thumbnail mode as %d", thumbnail_mode);
   lpsink->thumbnail_mode = thumbnail_mode;
-=======
-  G_OBJECT_CLASS (parent_class)->finalize (obj);
-}
-
-void
-gst_lp_sink_set_thumbnail_mode (GstLpSink * lpsink, gboolean thumbnail_mode)
-{
-  GST_DEBUG_OBJECT (lpsink, "set thumbnail mode as %d", thumbnail_mode);
-  lpsink->thumbnail_mode = thumbnail_mode;
 }
 
 void
@@ -479,9 +470,7 @@ src_pad_added_cb (GstElement * rfunnel, GstPad * pad, GstLpSink * lpsink)
 static void
 caps_notify_cb (GstPad * pad, GParamSpec * unused, GstLpSink * lpsink)
 {
-  gboolean reconfigure = FALSE;
   GstCaps *caps;
-  gboolean raw;
 
   g_object_get (pad, "caps", &caps, NULL);
   if (!caps)
@@ -506,7 +495,6 @@ gst_lp_sink_do_reconfigure (GstLpSink * lpsink, GstLpSinkType type,
 {
   GstSinkChain *audiochain;
   GstSinkChain *videochain;
-  GstSinkChain *textchain;
   //GstPad *os_srcpad;
 
   if (type == GST_LP_SINK_TYPE_AUDIO) {
@@ -557,6 +545,7 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
 {
   GstPad *res = NULL;
   const gchar *pad_name;
+  const gchar *sink_name;
   GstElement *osel;
   GstPad *rfnl_sinkpad, *rfnl_srcpad;
 

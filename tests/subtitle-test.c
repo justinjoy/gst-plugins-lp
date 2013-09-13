@@ -26,7 +26,8 @@ bus_call (GstBus * bus, GstMessage * message, gpointer data)
         break;
       }
 
-      sample = gst_value_get_sample (gst_structure_get_value (structure, "sample"));
+      sample =
+          gst_value_get_sample (gst_structure_get_value (structure, "sample"));
 
       if (!sample) {
         GST_WARNING ("invalid sample value");
@@ -36,8 +37,8 @@ bus_call (GstBus * bus, GstMessage * message, gpointer data)
       caps = gst_sample_get_caps (sample);
       buf = gst_sample_get_buffer (sample);
 
-      clock = gst_element_get_clock (lpbin);
-      base_time = gst_element_get_base_time (lpbin);
+      clock = gst_element_get_clock (GST_ELEMENT_CAST (lpbin));
+      base_time = gst_element_get_base_time (GST_ELEMENT_CAST (lpbin));
       running_time = gst_clock_get_time (clock) - base_time;
 
       position = GST_BUFFER_PTS (buf);
@@ -45,7 +46,7 @@ bus_call (GstBus * bus, GstMessage * message, gpointer data)
       GST_WARNING ("buf is %p, caps is %s", buf, gst_caps_to_string (caps));
       GST_WARNING ("received a subtitle at position %" GST_TIME_FORMAT
           ", running_time %" GST_TIME_FORMAT, GST_TIME_ARGS (position),
-               GST_TIME_ARGS (running_time));
+          GST_TIME_ARGS (running_time));
 
       /* application should do unref after get the sample data */
       gst_sample_unref (sample);

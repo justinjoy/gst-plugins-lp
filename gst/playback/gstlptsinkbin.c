@@ -54,7 +54,8 @@ static GstPad *gst_lp_tsink_bin_request_new_pad (GstElement * element,
 static void gst_lp_tsink_bin_release_request_pad (GstElement * element,
     GstPad * pad);
 
-static gboolean activate_chain (GstElement * sink, GstTextGroup * tgoup, gboolean activate);
+static gboolean activate_chain (GstElement * sink, GstTextGroup * tgoup,
+    gboolean activate);
 static GstFlowReturn gst_lp_tsink_bin_new_sample (GstElement * sink);
 
 G_DEFINE_TYPE (GstLpTSinkBin, gst_lp_tsink_bin, GST_TYPE_BIN);
@@ -154,7 +155,8 @@ gst_lp_tsink_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
   gst_element_link_pads (t_group->queue, "src", t_group->appsink, "sink");
 
   queue_sinkpad = gst_element_get_static_pad (t_group->queue, "sink");
-  pad_name = g_strdup_printf ("text_sink%d", g_list_length (lptsinkbin->sink_list));
+  pad_name =
+      g_strdup_printf ("text_sink%d", g_list_length (lptsinkbin->sink_list));
   pad = gst_ghost_pad_new (pad_name, queue_sinkpad);
 
   gst_pad_set_active (pad, TRUE);
@@ -222,7 +224,7 @@ activate_chain (GstElement * sink, GstTextGroup * tgroup, gboolean activate)
   gst_element_set_state (tgroup->appsink, state);
 
   return TRUE;
-} 
+}
 
 static GstFlowReturn
 gst_lp_tsink_bin_new_sample (GstElement * sink)

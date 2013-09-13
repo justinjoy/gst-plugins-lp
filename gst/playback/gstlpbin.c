@@ -81,7 +81,7 @@ static gboolean gst_lp_bin_query (GstElement * element, GstQuery * query);
 static void no_more_pads_cb (GstElement * decodebin, GstLpBin * lpbin);
 static void pad_added_cb (GstElement * decodebin, GstPad * pad,
     GstLpBin * lpbin);
-static void pad_removec_cb (GstElement * decodebin, GstPad * pad,
+static void pad_removed_cb (GstElement * decodebin, GstPad * pad,
     GstLpBin * lpbin);
 static void notify_source_cb (GstElement * decodebin, GParamSpec * pspec,
     GstLpBin * lpbin);
@@ -702,7 +702,9 @@ pad_added_cb (GstElement * decodebin, GstPad * pad, GstLpBin * lpbin)
     lpbin->video_pad = fcbin_srcpad;
   } else if (!lpbin->audio_pad && g_str_has_prefix (name, "audio/")) {
     lpbin->audio_pad = fcbin_srcpad;
-  } else if (!lpbin->text_pad && g_str_has_prefix (name, "text/")) {
+  } else if (!lpbin->text_pad && g_str_has_prefix (name, "text/")
+      || g_str_has_prefix (name, "application/")
+      || g_str_has_prefix (name, "subpicture/")) {
     lpbin->text_pad = fcbin_srcpad;
   }
 
@@ -814,7 +816,7 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
   /* FIXME: Using fixed value caps is not a good idea. */
   fd_caps =
       gst_caps_from_string
-      ("video/x-fd; audio/x-fd; text/x-avi-internal; text/x-avi-unknown; text/x-raw; application/x-ass; application/x-ssa; subpicture/x-dvd;");
+      ("video/x-fd; audio/x-fd; text/x-avi-internal; text/x-avi-unknown; text/x-raw; application/x-ass; application/x-ssa; subpicture/x-dvd; subpicture/x-dvb;");
 
   lpbin->uridecodebin = gst_element_factory_make ("uridecodebin", NULL);
 

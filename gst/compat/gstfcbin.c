@@ -221,8 +221,9 @@ gst_fc_bin_init (GstFCBin * fcbin)
   fcbin->select[GST_FC_BIN_STREAM_TEXT].media_list[2] = "application/x-ssa";
   fcbin->select[GST_FC_BIN_STREAM_TEXT].media_list[3] = "application/x-ass";
   fcbin->select[GST_FC_BIN_STREAM_TEXT].media_list[4] = "subpicture/x-dvd";
-  fcbin->select[GST_FC_BIN_STREAM_TEXT].media_list[5] = "subpicture/";
-  fcbin->select[GST_FC_BIN_STREAM_TEXT].media_list[6] = "subtitle/";
+  fcbin->select[GST_FC_BIN_STREAM_TEXT].media_list[5] = "subpicture/x-dvb";
+  fcbin->select[GST_FC_BIN_STREAM_TEXT].media_list[6] = "subpicture/";
+  fcbin->select[GST_FC_BIN_STREAM_TEXT].media_list[7] = "subtitle/";
   fcbin->select[GST_FC_BIN_STREAM_TEXT].type = GST_LP_SINK_TYPE_TEXT;
 
   fcbin->current_video = DEFAULT_CURRENT_VIDEO;
