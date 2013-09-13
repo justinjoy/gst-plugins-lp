@@ -1,7 +1,7 @@
 plugin_LTLIBRARIES = libgstlp.la
 
 # sources used to compile this plug-in
-libgstlp_la_SOURCES = gstlp.c gstlpbin.c gstlpsink.c gstlpsrcbin.c
+libgstlp_la_SOURCES = gstlp.c gstlpbin.c gstlpsink.c gstlpsrcbin.c gstlptsinkbin.c
 
 # compiler and linker flags used to compile this plugin, set in configure.ac
 libgstlp_la_CFLAGS = $(GST_CFLAGS)

@@ -80,7 +80,6 @@ static void gst_lp_sink_handle_message (GstBin * bin, GstMessage * message);
 void gst_lp_sink_set_sink (GstLpSink * lpsink, GstLpSinkType type,
     GstElement * sink);
 GstElement *gst_lp_sink_get_sink (GstLpSink * lpsink, GstLpSinkType type);
-static GstFlowReturn gst_lp_sink_new_sample (GstElement * sink);
 static void src_pad_added_cb (GstElement * osel, GstPad * pad,
     GstLpSink * lpsink);
 static gboolean gst_lp_sink_do_reconfigure (GstLpSink * lpsink,
@@ -219,7 +218,6 @@ gst_lp_sink_dispose (GObject * obj)
     gst_object_unref (lpsink->video_sink);
     lpsink->video_sink = NULL;
   }
-
   if (lpsink->audio_pad) {
     gst_object_unref (lpsink->audio_pad);
     lpsink->audio_pad = NULL;
@@ -455,60 +453,6 @@ gen_video_chain (GstLpSink * lpsink)
   return chain;
 }
 
-static GstSinkChain *
-gen_text_chain (GstLpSink * lpsink)
-{
-  GstSinkChain *chain;
-  gchar *bin_name = NULL;
-  GstBin *bin = NULL;
-  GstPad *queue_sinkpad = NULL;
-  GstElement *sink_element = NULL;
-
-  GST_LP_SINK_LOCK (lpsink);
-
-  chain = g_slice_alloc0 (sizeof (GstSinkChain));
-  chain->lpsink = lpsink;
-
-  sink_element = gst_element_factory_make ("appsink", NULL);
-  chain->sink = try_element (lpsink, sink_element, TRUE);
-
-  g_object_set (sink_element, "emit-signals", TRUE, NULL);
-  g_signal_connect (sink_element, "new-sample",
-      G_CALLBACK (gst_lp_sink_new_sample), NULL);
-
-  if (chain->sink)
-    lpsink->text_sink = gst_object_ref (chain->sink);
-
-  bin_name = g_strdup_printf ("tbin%d", lpsink->nb_text_bin++);
-  chain->bin = gst_bin_new (bin_name);
-  bin = GST_BIN_CAST (chain->bin);
-  gst_object_ref_sink (bin);
-  gst_bin_add (bin, chain->sink);
-
-  chain->queue = gst_element_factory_make ("queue", NULL);
-  g_object_set (G_OBJECT (chain->queue), "max-size-buffers", 3,
-      "max-size-bytes", 0, "max-size-time", (gint64) GST_SECOND, "silent", TRUE,
-      NULL);
-  gst_bin_add (bin, chain->queue);
-
-  gst_element_link_pads_full (chain->queue, "src", chain->sink, NULL,
-      GST_PAD_LINK_CHECK_TEMPLATE_CAPS);
-
-  queue_sinkpad = gst_element_get_static_pad (chain->queue, "sink");
-  chain->bin_ghostpad = gst_ghost_pad_new ("sink", queue_sinkpad);
-
-  gst_object_unref (queue_sinkpad);
-  gst_element_add_pad (chain->bin, chain->bin_ghostpad);
-
-  GST_LP_SINK_UNLOCK (lpsink);
-
-  lpsink->sink_chain_list =
-      g_list_append (lpsink->sink_chain_list, (GstSinkChain *) chain);
-
-  return chain;
-}
-
-
 static void
 src_pad_added_cb (GstElement * rfunnel, GstPad * pad, GstLpSink * lpsink)
 {
@@ -586,14 +530,13 @@ gst_lp_sink_do_reconfigure (GstLpSink * lpsink, GstLpSinkType type,
           videochain->bin_ghostpad);
 
   } else if (type == GST_LP_SINK_TYPE_TEXT) {
-    textchain = gen_text_chain (lpsink);
-
-    add_chain (GST_SINK_CHAIN (textchain), TRUE);
-    activate_chain (GST_SINK_CHAIN (textchain), TRUE);
+    GstPad *sink_sinkpad;
+    
+    sink_sinkpad = gst_element_get_request_pad (lpsink->text_sinkbin, "text_sink%d");
 
     if (lpsink->text_rfunnel) {
       gst_pad_link_full (fnl_srcpad,
-          textchain->bin_ghostpad, GST_PAD_LINK_CHECK_NOTHING);
+          sink_sinkpad, GST_PAD_LINK_CHECK_NOTHING);
     }
   }
 
@@ -676,6 +619,11 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
       rfnl_sinkpad = gst_element_get_static_pad (lpsink->text_rfunnel, "sink");
       gst_bin_add (GST_BIN_CAST (lpsink), lpsink->text_rfunnel);
       gst_element_set_state (lpsink->text_rfunnel, GST_STATE_PAUSED);
+
+      lpsink->text_sinkbin = gst_element_factory_make ("lptsinkbin", NULL);
+      gst_bin_add (GST_BIN_CAST (lpsink), lpsink->text_sinkbin);
+      GST_OBJECT_FLAG_SET (lpsink->text_sinkbin, GST_ELEMENT_FLAG_SINK);
+
       if (!lpsink->text_pad) {
         lpsink->text_pad = gst_ghost_pad_new (pad_name, rfnl_sinkpad);
         g_signal_connect (lpsink->text_rfunnel, "src-pad-added",
@@ -1060,37 +1008,4 @@ gst_lp_sink_get_sink (GstLpSink * lpsink, GstLpSinkType type)
   GST_LP_SINK_UNLOCK (lpsink);
 
   return result;
-}
-
-static GstFlowReturn
-gst_lp_sink_new_sample (GstElement * sink)
-{
-  GstSample *sample;
-  GstBuffer *buffer;
-  GstCaps *caps;
-  GstStructure *structure;
-
-  GstPad *pad;
-
-  pad = gst_element_get_static_pad (sink, "sink");
-
-  g_signal_emit_by_name (sink, "pull-sample", &sample);
-
-  if (sample) {
-    GstSample *out_sample;
-    out_sample =
-        GST_SAMPLE_CAST (gst_mini_object_copy (GST_MINI_OBJECT_CONST_CAST
-            (sample)));
-
-    structure =
-        gst_structure_new ("subtitle_data", "sample", GST_TYPE_SAMPLE,
-        out_sample, NULL);
-
-    gst_element_post_message (sink,
-        gst_message_new_application (GST_OBJECT_CAST (sink), structure));
-
-    gst_sample_unref (sample);
-  }
-
-  return GST_FLOW_OK;
 }

@@ -28,6 +28,7 @@
 #include "gstlpbin.h"
 #include "gstlpsink.h"
 #include "gstlpsrcbin.h"
+#include "gstlptsinkbin.h"
 
 static gboolean
 plugin_init (GstPlugin * plugin)
@@ -38,6 +39,10 @@ plugin_init (GstPlugin * plugin)
 
   if (!gst_element_register (plugin, "lpsink", GST_RANK_PRIMARY,
           GST_TYPE_LP_SINK))
+    return FALSE;
+
+  if (!gst_element_register (plugin, "lptsinkbin", GST_RANK_PRIMARY,
+          GST_TYPE_LP_TSINK_BIN))
     return FALSE;
 
   return TRUE;

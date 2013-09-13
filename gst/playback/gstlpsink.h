@@ -51,6 +51,7 @@ struct _GstLpSink
 
   GstElement *video_sink;
   GstElement *audio_sink;
+  GstElement *text_sinkbin;
   GstPad *audio_pad;
   GstPad *video_pad;
 

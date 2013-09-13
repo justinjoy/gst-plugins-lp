@@ -8,13 +8,15 @@ static gboolean
 bus_call (GstBus * bus, GstMessage * message, gpointer data)
 {
   GstLpBin *lpbin = (GstLpBin *) data;
+  GstClock *clock;
+  GstClockTime base_time, running_time;
+  GstClockTime position;
 
   switch (GST_MESSAGE_TYPE (message)) {
     case GST_MESSAGE_APPLICATION:
     {
       GstSample *sample;
       GstBuffer *buf;
-      gboolean bitmap = FALSE;
       GstCaps *caps;
       const GstStructure *structure = gst_message_get_structure (message);
 
@@ -34,7 +36,16 @@ bus_call (GstBus * bus, GstMessage * message, gpointer data)
       caps = gst_sample_get_caps (sample);
       buf = gst_sample_get_buffer (sample);
 
+      clock = gst_element_get_clock (lpbin);
+      base_time = gst_element_get_base_time (lpbin);
+      running_time = gst_clock_get_time (clock) - base_time;
+
+      position = GST_BUFFER_PTS (buf);
+
       GST_WARNING ("buf is %p, caps is %s", buf, gst_caps_to_string (caps));
+      GST_WARNING ("received a subtitle at position %" GST_TIME_FORMAT
+          ", running_time %" GST_TIME_FORMAT, GST_TIME_ARGS (position),
+               GST_TIME_ARGS (running_time));
 
       /* application should do unref after get the sample data */
       gst_sample_unref (sample);
@@ -92,21 +103,21 @@ main (gint argc, gchar * argv[])
 
   if (gst_element_set_state (lpbin,
           GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE) {
-    GST_DEBUG_OBJECT (lpbin, "thumbnail-mode-test : Failed to paused state");
+    GST_DEBUG_OBJECT (lpbin, "Failed to paused state");
     goto done;
   }
 
   sret = gst_element_get_state (lpbin, NULL, NULL, -1);
 
   if (sret == GST_STATE_CHANGE_FAILURE) {
-    GST_DEBUG_OBJECT (lpbin, "thumbnail-mode-test : Failed to get lpbin state");
+    GST_DEBUG_OBJECT (lpbin, "Failed to get lpbin state");
     goto done;
   }
 
   sret = gst_element_get_state (lpbin, NULL, NULL, -1);
 
   if (sret == GST_STATE_CHANGE_FAILURE) {
-    GST_DEBUG_OBJECT (lpbin, "thumbnail-mode-test : Failed to get lpbin state");
+    GST_DEBUG_OBJECT (lpbin, "Failed to get lpbin state");
     goto done;
   }
   g_main_loop_run (loop);
