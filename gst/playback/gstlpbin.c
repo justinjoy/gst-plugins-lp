@@ -1373,8 +1373,8 @@ gst_lp_bin_autoplug_factories (GstElement * element, GstPad * pad,
 static GstStructure *
 gst_lp_bin_caps_video (GstLpBin * lpbin)
 {
-  GstStructure *result;
-  GstCaps *caps;
+  GstStructure *result = NULL;
+  GstCaps *caps = NULL;
 
   //TODO At future, video_sink will be used instead of video_pad.
   if (!lpbin->video_pad)
