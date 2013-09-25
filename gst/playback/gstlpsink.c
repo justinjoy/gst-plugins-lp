@@ -116,9 +116,9 @@ gst_lp_sink_class_init (GstLpSinkClass * klass)
   gobject_klass->get_property = gst_lp_sink_get_property;
 
   /**
-   * GstPlaySink:video-sink:
+   * GstLpSink:video-sink:
    *
-   * Set the used video sink element. NULL will use the default sink. playsink
+   * Set the used video sink element. NULL will use the default sink. lpsink
    * must be in %GST_STATE_NULL
    *
    */
@@ -128,9 +128,9 @@ gst_lp_sink_class_init (GstLpSinkClass * klass)
           GST_TYPE_ELEMENT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   /**
-   * GstPlaySink:audio-sink:
+   * GstLpSink:audio-sink:
    *
-   * Set the used audio sink element. NULL will use the default sink. playsink
+   * Set the used audio sink element. NULL will use the default sink. lpsink
    * must be in %GST_STATE_NULL
    *
    */
@@ -310,6 +310,44 @@ gst_lp_sink_set_multiple_stream (GstLpSink * lpsink, gchar * type,
   }
   GST_LP_SINK_UNLOCK (lpsink);
 }
+
+static void
+do_async_start (GstLpSink * lpsink)
+{
+  GstMessage *message;
+
+  if (!lpsink->need_async_start) {
+    GST_INFO_OBJECT (lpsink, "no async_start needed");
+    return;
+  }
+
+  lpsink->async_pending = TRUE;
+
+  GST_INFO_OBJECT (lpsink, "Sending async_start message");
+  message = gst_message_new_async_start (GST_OBJECT_CAST (lpsink));
+  GST_BIN_CLASS (gst_lp_sink_parent_class)->handle_message (GST_BIN_CAST
+      (lpsink), message);
+}
+
+static void
+do_async_done (GstLpSink * lpsink)
+{
+  GstMessage *message;
+
+  if (lpsink->async_pending) {
+    GST_INFO_OBJECT (lpsink, "Sending async_done message");
+    message =
+        gst_message_new_async_done (GST_OBJECT_CAST (lpsink),
+        GST_CLOCK_TIME_NONE);
+    GST_BIN_CLASS (gst_lp_sink_parent_class)->handle_message (GST_BIN_CAST
+        (lpsink), message);
+
+    lpsink->async_pending = FALSE;
+  }
+
+  lpsink->need_async_start = FALSE;
+}
+
 
 static GstElement *
 try_element (GstLpSink * lpsink, GstElement * element, gboolean unref)
@@ -541,6 +579,8 @@ gst_lp_sink_do_reconfigure (GstLpSink * lpsink, GstLpSinkType type,
       gst_pad_link_full (fnl_srcpad, sink_sinkpad, GST_PAD_LINK_CHECK_NOTHING);
     }
   }
+
+  do_async_done (lpsink);
 
   return TRUE;
 }
@@ -881,7 +921,15 @@ gst_lp_sink_change_state (GstElement * element, GstStateChange transition)
   GstLpSink *lpsink;
   lpsink = GST_LP_SINK (element);
 
+
   switch (transition) {
+    case GST_STATE_CHANGE_READY_TO_PAUSED:
+      lpsink->need_async_start = TRUE;
+      /* we want to go async to PAUSED until we managed to configure and add the
+       * sinks */
+      do_async_start (lpsink);
+      ret = GST_STATE_CHANGE_ASYNC;
+      break;
     default:
       /* all other state changes return SUCCESS by default, this value can be
        * overridden by the result of the children */
@@ -900,7 +948,7 @@ gst_lp_sink_change_state (GstElement * element, GstStateChange transition)
     case GST_STATE_CHANGE_NO_PREROLL:
       /* some child returned NO_PREROLL. This is strange but we never know. We
        * commit our async state change (if any) and return the NO_PREROLL */
-//      do_async_done (playsink);
+      do_async_done (lpsink);
       ret = bret;
       break;
     case GST_STATE_CHANGE_ASYNC:
@@ -916,6 +964,8 @@ gst_lp_sink_change_state (GstElement * element, GstStateChange transition)
     case GST_STATE_CHANGE_READY_TO_PAUSED:
       break;
     case GST_STATE_CHANGE_PAUSED_TO_READY:{
+      /* FIXME Release audio device when we implement that */
+      lpsink->need_async_start = TRUE;
       break;
     }
     case GST_STATE_CHANGE_READY_TO_NULL:
@@ -940,7 +990,7 @@ gst_lp_sink_change_state (GstElement * element, GstStateChange transition)
           free_chain ((GstSinkChain *) chain);
           walk = g_list_next (walk);
         }
-
+        do_async_done (lpsink);
       }
       break;
     default:

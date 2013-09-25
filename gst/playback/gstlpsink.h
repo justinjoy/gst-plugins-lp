@@ -71,6 +71,8 @@ struct _GstLpSink
   guint nb_text_bin;
 
   gboolean audio_only;
+  gboolean need_async_start;
+  gboolean async_pending;
 };
 
 struct _GstLpSinkClass
