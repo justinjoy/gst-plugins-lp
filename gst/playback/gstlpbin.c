@@ -46,6 +46,7 @@ enum
   PROP_USE_BUFFERING,
   PROP_VIDEO_RESOURCE,
   PROP_AUDIO_RESOURCE,
+  PROP_MUTE,
   PROP_LAST
 };
 
@@ -237,6 +238,11 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
       g_param_spec_int ("current-text", "Current Text",
           "Currently playing text stream (-1 = auto)",
           -1, G_MAXINT, -1, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property (gobject_klass, PROP_MUTE,
+      g_param_spec_boolean ("mute", "Mute",
+          "Mute the audio channel without changing the volume", FALSE,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property (gobject_klass, PROP_VIDEO_SINK,
       g_param_spec_object ("video-sink", "Video Sink",
@@ -553,6 +559,8 @@ gst_lp_bin_set_property (GObject * object, guint prop_id,
       g_object_set (lpbin->fcbin, "current-text", g_value_get_int (value),
           NULL);
       break;
+    case PROP_MUTE:
+      break;
     case PROP_VIDEO_SINK:
       gst_lp_bin_set_sink (lpbin, &lpbin->video_sink, "video",
           g_value_get_object (value));
@@ -661,6 +669,8 @@ gst_lp_bin_get_property (GObject * object, guint prop_id, GValue * value,
       GST_LP_BIN_UNLOCK (lpbin);
       break;
     }
+    case PROP_MUTE:
+      break;
     case PROP_THUMBNAIL_MODE:
       g_value_set_boolean (value, lpbin->thumbnail_mode);
       break;
