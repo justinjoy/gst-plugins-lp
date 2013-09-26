@@ -53,6 +53,7 @@ enum
   PROP_AUDIO_SINK,
   PROP_VIDEO_RESOURCE,
   PROP_AUDIO_RESOURCE,
+  PROP_AUDIO_ONLY,
   PROP_LAST
 };
 
@@ -148,6 +149,10 @@ gst_lp_sink_class_init (GstLpSinkClass * klass)
           "Acquired audio resource (the most significant bit - 0: ADEC, 1: MIX / the remains - channel number)",
           0, G_MAXUINT, 0, G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
 
+  g_object_class_install_property (gobject_klass, PROP_AUDIO_ONLY,
+      g_param_spec_boolean ("audio-only", "Audio only stream",
+          "Audio only stream", FALSE,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   gst_element_class_add_pad_template (gstelement_klass,
       gst_static_pad_template_get (&audiotemplate));
@@ -199,6 +204,8 @@ gst_lp_sink_init (GstLpSink * lpsink)
   lpsink->nb_video_bin = 0;
   lpsink->nb_audio_bin = 0;
   lpsink->nb_text_bin = 0;
+
+  lpsink->audio_only = FALSE;
 }
 
 static void
@@ -390,6 +397,13 @@ gen_audio_chain (GstLpSink * lpsink)
   lpsink->sink_chain_list =
       g_list_append (lpsink->sink_chain_list, (GstSinkChain *) chain);
 
+  if (g_object_class_find_property (G_OBJECT_GET_CLASS (chain->sink),
+          "audio-only"))
+    g_object_set (chain->sink, "audio-only", lpsink->audio_only, NULL);
+  else
+    GST_WARNING_OBJECT (lpsink, "%s doesn't have audio-only property.",
+        gst_element_get_name (chain->sink));
+
   return chain;
 }
 
@@ -519,12 +533,12 @@ gst_lp_sink_do_reconfigure (GstLpSink * lpsink, GstLpSinkType type,
 
   } else if (type == GST_LP_SINK_TYPE_TEXT) {
     GstPad *sink_sinkpad;
-    
-    sink_sinkpad = gst_element_get_request_pad (lpsink->text_sinkbin, "text_sink%d");
+
+    sink_sinkpad =
+        gst_element_get_request_pad (lpsink->text_sinkbin, "text_sink%d");
 
     if (lpsink->text_rfunnel) {
-      gst_pad_link_full (fnl_srcpad,
-          sink_sinkpad, GST_PAD_LINK_CHECK_NOTHING);
+      gst_pad_link_full (fnl_srcpad, sink_sinkpad, GST_PAD_LINK_CHECK_NOTHING);
     }
   }
 
@@ -734,6 +748,9 @@ gst_lp_sink_set_property (GObject * object, guint prop_id,
       break;
     case PROP_AUDIO_RESOURCE:
       lpsink->audio_resource = g_value_get_uint (value);
+      break;
+    case PROP_AUDIO_ONLY:
+      lpsink->audio_only = g_value_get_boolean (value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, spec);

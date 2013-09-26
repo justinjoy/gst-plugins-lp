@@ -69,6 +69,8 @@ struct _GstLpSink
   guint nb_video_bin;
   guint nb_audio_bin;
   guint nb_text_bin;
+
+  gboolean audio_only;
 };
 
 struct _GstLpSinkClass

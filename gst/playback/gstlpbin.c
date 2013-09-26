@@ -792,6 +792,13 @@ no_more_pads_cb (GstElement * decodebin, GstLpBin * lpbin)
   if (lpbin->video_pad) {
     lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, "video_sink");
     gst_pad_link (lpbin->video_pad, lpsink_sinkpad);
+  } else {
+    if (g_object_class_find_property (G_OBJECT_GET_CLASS (lpbin->lpsink),
+            "audio-only"))
+      g_object_set (lpbin->lpsink, "audio-only", TRUE, NULL);
+    else
+      GST_WARNING_OBJECT (lpbin, "%s doesn't have audio-only property.",
+          gst_element_get_name (lpbin->lpsink));
   }
 
   if (lpbin->audio_pad) {
