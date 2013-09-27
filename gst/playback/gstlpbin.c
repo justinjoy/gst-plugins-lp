@@ -47,6 +47,7 @@ enum
   PROP_VIDEO_RESOURCE,
   PROP_AUDIO_RESOURCE,
   PROP_MUTE,
+  PROP_SMART_PROPERTIES,
   PROP_LAST
 };
 
@@ -120,10 +121,14 @@ static GstBuffer *gst_lp_bin_retrieve_thumbnail (GstLpBin * lpbin, gint width,
 static void gst_lp_bin_set_thumbnail_mode (GstLpBin * lpbin,
     gboolean thumbnail_mode);
 static GstStructure *gst_lp_bin_caps_video (GstLpBin * lpbin);
+static void gst_lp_bin_set_property_table (GstLpBin * lpbin, gchar * maps);
+static void gst_lp_bin_do_property_set (GstLpBin * lpbin, GstElement * element);
 
 static GstElementClass *parent_class;
 
 static guint gst_lp_bin_signals[LAST_SIGNAL] = { 0 };
+
+static GRWLock lock;
 
 GType
 gst_lp_bin_get_type (void)
@@ -273,6 +278,21 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
       g_param_spec_uint ("audio-resource", "Acquired audio resource",
           "Acquired audio resource.(the most significant bit - 0: ADEC, 1: MIX / the remains - channel number)",
           0, G_MAXUINT, 0, G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
+
+  /**
+   * GstLpBin::smart-properties:
+   *
+   * This property makes to be possible that all of elements in uridecodebin
+   * can set directly their's properties.
+   * A property should be comprised of key and value and split by ':' delimiter.
+   * All of properties should be split by ',' delimiter.
+   * ex ) smart-properties="program-number:3,emit-stats:TRUE"
+   *
+   */
+  g_object_class_install_property (gobject_klass, PROP_SMART_PROPERTIES,
+      g_param_spec_string ("smart-properties", "Smart Properties",
+          "Information of properties in such key and value", NULL,
+          G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
 
   gst_lp_bin_signals[SIGNAL_ABOUT_TO_FINISH] =
       g_signal_new ("about-to-finish", G_TYPE_FROM_CLASS (klass),
@@ -445,6 +465,10 @@ gst_lp_bin_init (GstLpBin * lpbin)
 
   lpbin->video_resource = 0;
   lpbin->audio_resource = 0;
+
+  g_rw_lock_init (&lock);
+  lpbin->property_pairs = NULL;
+  lpbin->elements_str = NULL;
 }
 
 static void
@@ -474,6 +498,15 @@ gst_lp_bin_finalize (GObject * obj)
   if (lpbin->audio_sink) {
     gst_element_set_state (lpbin->audio_sink, GST_STATE_NULL);
     gst_object_unref (lpbin->audio_sink);
+  }
+
+  if (lpbin->property_pairs) {
+    g_hash_table_remove_all (lpbin->property_pairs);
+    g_hash_table_destroy (lpbin->property_pairs);
+  }
+
+  if (lpbin->elements_str) {
+    g_free (lpbin->elements_str);
   }
 
   g_rec_mutex_clear (&lpbin->lock);
@@ -584,6 +617,9 @@ gst_lp_bin_set_property (GObject * object, guint prop_id,
       lpbin->audio_resource = g_value_get_uint (value);
       GST_DEBUG_OBJECT (lpbin, "setting audio resource [%x]",
           lpbin->audio_resource);
+      break;
+    case PROP_SMART_PROPERTIES:
+      gst_lp_bin_set_property_table (lpbin, g_value_get_string (value));
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -778,6 +814,8 @@ notify_source_cb (GstElement * decodebin, GParamSpec * pspec, GstLpBin * lpbin)
   g_object_get (lpbin->uridecodebin, "source", &source, NULL);
 
   GST_OBJECT_LOCK (lpbin);
+  if (lpbin->property_pairs)
+    gst_lp_bin_do_property_set (lpbin, source);
   if ((lpbin->source != NULL) && (GST_IS_ELEMENT (lpbin->source))) {
     gst_object_unref (GST_OBJECT (lpbin->source));
   }
@@ -1057,6 +1095,17 @@ static gboolean
 autoplug_continue_signal (GstElement * element, GstPad * pad, GstCaps * caps,
     GstLpBin * lpbin)
 {
+  GstPad *opad = NULL;
+  GstElement *elem = NULL;
+
+  if (lpbin->property_pairs) {
+    opad = gst_ghost_pad_get_target (GST_GHOST_PAD_CAST (pad));
+    if (opad) {
+      elem = gst_pad_get_parent (opad);
+      if (elem)
+        gst_lp_bin_do_property_set (lpbin, elem);
+    }
+  }
   GST_LOG_OBJECT (lpbin, "autoplug_continue_notify");
 
   gboolean result;
@@ -1066,6 +1115,8 @@ autoplug_continue_signal (GstElement * element, GstPad * pad, GstCaps * caps,
 
   GST_LOG_OBJECT (lpbin, "autoplug_continue_notify, result = %d", result);
 
+  if (opad)
+    gst_object_unref (opad);
   return result;
 }
 
@@ -1406,4 +1457,64 @@ gst_lp_bin_caps_video (GstLpBin * lpbin)
 
 end:
   return result;
+}
+
+static void
+gst_lp_bin_set_property_table (GstLpBin * lpbin, gchar * maps)
+{
+  gchar **properties = NULL;
+  gint i;
+
+  if (maps == NULL) {
+    goto done;
+  }
+
+  if (lpbin->property_pairs == NULL) {
+    lpbin->property_pairs = g_hash_table_new (g_str_hash, g_str_equal);
+  }
+
+  properties = g_strsplit_set (maps, ":,", -1);
+
+  i = 0;
+  while (i < g_strv_length (properties)) {
+    g_rw_lock_writer_lock (&lock);
+    g_hash_table_insert (lpbin->property_pairs, g_strdup (properties[i]),
+        g_strdup (properties[i + 1]));
+    g_rw_lock_writer_unlock (&lock);
+    i = i + 2;
+  }
+
+done:
+  if (properties)
+    g_strfreev (properties);
+}
+
+static void
+gst_lp_bin_do_property_set (GstLpBin * lpbin, GstElement * element)
+{
+  GHashTableIter iter;
+  gpointer key, value;
+
+  if (lpbin->elements_str != NULL
+      && strstr (lpbin->elements_str, gst_element_get_name (element))) {
+    GST_DEBUG_OBJECT (lpbin,
+        "gst_lp_bin_do_property_set : element = %s already did it",
+        gst_element_get_name (element));
+    return;
+  }
+
+  lpbin->elements_str =
+      g_strconcat (g_strdup_printf ("%s:", gst_element_get_name (element)),
+      lpbin->elements_str, NULL);
+
+  g_hash_table_iter_init (&iter, lpbin->property_pairs);
+  while (g_hash_table_iter_next (&iter, &key, &value)) {
+    GParamSpec *param;
+    if (param =
+        g_object_class_find_property (G_OBJECT_GET_CLASS (element),
+            (gchar *) key)) {
+      gst_util_set_object_arg (G_OBJECT (element), param->name,
+          (gchar *) value);
+    }
+  }
 }

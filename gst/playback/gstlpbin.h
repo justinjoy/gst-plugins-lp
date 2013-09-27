@@ -90,6 +90,12 @@ struct _GstLpBin
 
   guint video_resource;
   guint audio_resource;
+
+  /* This table contains property name and value */
+  GHashTable *property_pairs;
+
+  /* this string contains all of elements from decodebin */
+  gchar *elements_str;
 };
 
 struct _GstLpBinClass
