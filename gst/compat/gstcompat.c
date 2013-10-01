@@ -29,7 +29,7 @@
 #include "gstfcbin.h"
 #include "gstfakevdec.h"
 #include "gstfakeadec.h"
-#include "gstreversefunnel.h"
+#include "gststreamiddemux.h"
 
 static gboolean
 plugin_init (GstPlugin * plugin)
@@ -46,8 +46,8 @@ plugin_init (GstPlugin * plugin)
           GST_TYPE_FC_BIN))
     return FALSE;
 
-  if (!gst_element_register (plugin, "reversefunnel", GST_RANK_PRIMARY,
-          GST_TYPE_REVERSE_FUNNEL))
+  if (!gst_element_register (plugin, "streamiddemux", GST_RANK_PRIMARY,
+          gst_streamid_demux_get_type ()))
     return FALSE;
 
   return TRUE;

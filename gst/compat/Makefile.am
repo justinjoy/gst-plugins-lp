@@ -1,7 +1,7 @@
 plugin_LTLIBRARIES = libgstcompat.la
 
 # sources used to compile this plug-in
-libgstcompat_la_SOURCES = gstcompat.c gstfcbin.c gstfakevdec.c gstfakeadec.c gstreversefunnel.c
+libgstcompat_la_SOURCES = gstcompat.c gstfcbin.c gstfakevdec.c gstfakeadec.c gststreamiddemux.c
 
 # compiler and linker flags used to compile this plugin, set in configure.ac
 libgstcompat_la_CFLAGS = $(GST_CFLAGS)

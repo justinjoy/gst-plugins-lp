@@ -45,9 +45,9 @@ struct _GstLpSink
 
   GRecMutex lock;               /* to protect group switching */
 
-  GstElement *video_rfunnel;
-  GstElement *audio_rfunnel;
-  GstElement *text_rfunnel;
+  GstElement *video_streamid_demux;
+  GstElement *audio_streamid_demux;
+  GstElement *text_streamid_demux;
 
   GstElement *video_sink;
   GstElement *audio_sink;
