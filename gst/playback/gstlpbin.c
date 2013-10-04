@@ -372,9 +372,9 @@ gst_lp_bin_bus_cb (GstBus * bus, GstMessage * message, gpointer data)
         elem = GST_ELEMENT (GST_MESSAGE_SRC (message));
         factory = gst_element_get_factory (elem);
         klass = gst_element_factory_get_klass (factory);
+        elem_name = gst_element_get_name (elem);
 
-        if (strstr (klass, "Demux")) {
-          gchar *elem_name = gst_element_get_name (elem);
+        if (g_strrstr (klass, "Demux")) {
           GST_DEBUG_OBJECT (lpbin,
               "gst_lp_bin_bus_cb : GST_MESSAGE_STATE_CHANGED, element_name = %s",
               elem_name);
@@ -387,8 +387,7 @@ gst_lp_bin_bus_cb (GstBus * bus, GstMessage * message, gpointer data)
                 "gst_lp_bin_bus_cb : GST_MESSAGE_STATE_CHANGED, %s doesn't thumbnail-mode property.",
                 elem_name);
 
-        } else if (strstr (klass, "Parse")) {
-          gchar *elem_name = gst_element_get_name (elem);
+        } else if (g_strrstr (klass, "Parse")) {
           GST_DEBUG_OBJECT (lpbin,
               "gst_lp_bin_bus_cb : GST_MESSAGE_STATE_CHANGED, element_name = %s",
               elem_name);
@@ -397,7 +396,7 @@ gst_lp_bin_bus_cb (GstBus * bus, GstMessage * message, gpointer data)
              g_object_set (elem, "thumbnail-mode", TRUE, NULL);
              else
              GST_WARNING_OBJECT (lpbin, "gstBusCallbackHandle : GST_MESSAGE_STATE_CHANGED, %s doesn't thumbnail-mode property.", elem_name); */
-        } else if (strstr (gst_element_get_name (elem), "vbin")) {
+        } else if (g_strrstr (elem_name, "vbin")) {
           GValue value = { 0, };
           GstIterator *iter = NULL;
           gboolean done = FALSE;
@@ -413,7 +412,7 @@ gst_lp_bin_bus_cb (GstBus * bus, GstMessage * message, gpointer data)
                 element = GST_ELEMENT (g_value_get_object (&value));
                 elem_factory = gst_element_get_factory (element);
                 klass_type = gst_element_factory_get_klass (elem_factory);
-                if (strstr (klass_type, "Sink/Image")) {
+                if (g_strrstr (klass_type, "Sink/Image")) {
                   if (g_object_class_find_property (G_OBJECT_GET_CLASS
                           (element), "thumbnail-mode")) {
                     if (lpbin->thumbnail_mode) {
@@ -425,7 +424,7 @@ gst_lp_bin_bus_cb (GstBus * bus, GstMessage * message, gpointer data)
                   } else
                     GST_DEBUG_OBJECT (lpbin,
                         "gst_lp_bin_bus_cb : GST_MESSAGE_STATE_CHANGED, %s doesn't thumbnail-mode property.",
-                        gst_element_get_name (element));
+                        elem_name);
                 }
                 g_free (klass_type);
                 elem_factory = NULL;
@@ -448,7 +447,8 @@ gst_lp_bin_bus_cb (GstBus * bus, GstMessage * message, gpointer data)
           gst_iterator_free (iter);
         }
 
-        g_free (elem_name);
+        if (elem_name)
+          g_free (elem_name);
       }
       break;
   }
@@ -1535,7 +1535,7 @@ gst_lp_bin_do_property_set (GstLpBin * lpbin, GstElement * element)
   gpointer key, value;
 
   if (lpbin->elements_str != NULL
-      && strstr (lpbin->elements_str, gst_element_get_name (element))) {
+      && g_strrstr (lpbin->elements_str, gst_element_get_name (element))) {
     GST_DEBUG_OBJECT (lpbin,
         "gst_lp_bin_do_property_set : element = %s already did it",
         gst_element_get_name (element));
