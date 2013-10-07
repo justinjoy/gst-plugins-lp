@@ -53,8 +53,6 @@ struct _GstStreamidDemux
 
   /* This table contains srcpad and stream-id */
   GHashTable *stream_id_pairs;
-
-  GRWLock lock;
 };
 
 struct _GstStreamidDemuxClass

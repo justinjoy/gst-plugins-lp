@@ -79,6 +79,7 @@ static GstPad *gst_streamid_demux_get_srcpad_by_stream_id (GstStreamidDemux *
     demux, const gchar * stream_id);
 static void gst_streamid_demux_srcpad_create (GstStreamidDemux * demux,
     GstPad * pad, const gchar * stream_id);
+static void gst_streamid_demux_reset (GstStreamidDemux * demux);
 
 static void
 gst_streamid_demux_class_init (GstStreamidDemuxClass * klass)
@@ -118,8 +119,6 @@ gst_streamid_demux_init (GstStreamidDemux * demux)
 
   gst_element_add_pad (GST_ELEMENT (demux), demux->sinkpad);
 
-  g_rw_lock_init (&demux->lock);
-
   /* srcpad management */
   demux->active_srcpad = NULL;
   demux->nb_srcpads = 0;
@@ -130,6 +129,10 @@ gst_streamid_demux_init (GstStreamidDemux * demux)
 static void
 gst_streamid_demux_dispose (GObject * object)
 {
+  GstStreamidDemux *demux = GST_STREAMID_DEMUX (object);
+
+  gst_streamid_demux_reset (demux);
+
   G_OBJECT_CLASS (parent_class)->dispose (object);
 }
 
@@ -176,13 +179,15 @@ gst_streamid_demux_srcpad_create (GstStreamidDemux * demux, GstPad * pad,
       gst_pad_new_from_template (gst_static_pad_template_get
       (&gst_streamid_demux_src_factory), padname);
 
-  gst_object_ref (srcpad);
-  demux->active_srcpad = srcpad;
-
-  g_rw_lock_writer_lock (&demux->lock);
+  GST_OBJECT_LOCK (demux);
+  if (demux->active_srcpad != NULL) {
+    gst_object_unref (demux->active_srcpad);
+    demux->active_srcpad = NULL;
+  }
+  demux->active_srcpad = gst_object_ref (srcpad);
   g_hash_table_insert (demux->stream_id_pairs, g_strdup (stream_id),
-      (gpointer) srcpad);
-  g_rw_lock_writer_unlock (&demux->lock);
+      (gpointer) gst_object_ref (srcpad));
+  GST_OBJECT_UNLOCK (demux);
 
   gst_pad_set_active (srcpad, TRUE);
 
@@ -199,16 +204,21 @@ static GstFlowReturn
 gst_streamid_demux_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
 {
   GstFlowReturn res = GST_FLOW_OK;
-  GstStreamidDemux *demux;
+  GstStreamidDemux *demux = NULL;
+  GstPad *srcpad = NULL;
 
   demux = GST_STREAMID_DEMUX (parent);
 
   GST_LOG_OBJECT (demux, "pushing buffer to %" GST_PTR_FORMAT,
       demux->active_srcpad);
 
-  if (demux->active_srcpad)
-    res = gst_pad_push (demux->active_srcpad, buf);
-  else
+  if (demux->active_srcpad) {
+    GST_OBJECT_LOCK (demux);
+    srcpad = gst_object_ref (demux->active_srcpad);
+    GST_OBJECT_UNLOCK (demux);
+    res = gst_pad_push (srcpad, buf);
+    gst_object_unref (srcpad);
+  } else
     gst_buffer_unref (buf);
 
   GST_LOG_OBJECT (demux, "handled buffer %s", gst_flow_get_name (res));
@@ -226,11 +236,11 @@ gst_streamid_demux_get_srcpad_by_stream_id (GstStreamidDemux * demux,
     goto done;
   }
 
-  g_rw_lock_reader_lock (&demux->lock);
+  GST_OBJECT_LOCK (demux);
   srcpad = g_hash_table_lookup (demux->stream_id_pairs, stream_id);
   if (srcpad)
     gst_object_ref (srcpad);
-  g_rw_lock_reader_unlock (&demux->lock);
+  GST_OBJECT_UNLOCK (demux);
   if (srcpad) {
     GST_DEBUG_OBJECT (demux, "srcpad = %s matched", gst_pad_get_name (srcpad));
   }
@@ -252,20 +262,23 @@ gst_streamid_demux_event (GstPad * pad, GstObject * parent, GstEvent * event)
   GST_DEBUG_OBJECT (demux, "event = %s, sticky = %d",
       GST_EVENT_TYPE_NAME (event), GST_EVENT_IS_STICKY (event));
 
-  if (GST_EVENT_IS_STICKY (event)) {
-    if (GST_EVENT_TYPE (event) == GST_EVENT_STREAM_START) {
-      gst_event_parse_stream_start (event, &stream_id);
-      if (stream_id != NULL) {
-        active_srcpad =
-            gst_streamid_demux_get_srcpad_by_stream_id (demux, stream_id);
-        if (!active_srcpad) {
-          gst_streamid_demux_srcpad_create (demux, pad, stream_id);
-        } else if (demux->active_srcpad != active_srcpad) {
-          demux->active_srcpad = active_srcpad;
-        }
-      } else {
-        goto no_stream_id;
+  if (GST_EVENT_TYPE (event) == GST_EVENT_STREAM_START) {
+    gst_event_parse_stream_start (event, &stream_id);
+    if (!stream_id)
+      goto no_stream_id;
+
+    active_srcpad =
+        gst_streamid_demux_get_srcpad_by_stream_id (demux, stream_id);
+    if (!active_srcpad) {
+      gst_streamid_demux_srcpad_create (demux, pad, stream_id);
+    } else if (demux->active_srcpad != active_srcpad) {
+      GST_OBJECT_LOCK (demux);
+      if (demux->active_srcpad != NULL) {
+        gst_object_unref (demux->active_srcpad);
+        demux->active_srcpad = NULL;
       }
+      demux->active_srcpad = active_srcpad;
+      GST_OBJECT_UNLOCK (demux);
     }
   }
 
@@ -273,9 +286,13 @@ gst_streamid_demux_event (GstPad * pad, GstObject * parent, GstEvent * event)
       || GST_EVENT_TYPE (event) == GST_EVENT_FLUSH_STOP
       || GST_EVENT_TYPE (event) == GST_EVENT_EOS)
     res = gst_pad_event_default (pad, parent, event);
-  else if (demux->active_srcpad)
-    res = gst_pad_push_event (demux->active_srcpad, event);
-  else
+  else if (demux->active_srcpad) {
+    GST_OBJECT_LOCK (demux);
+    GstPad *srcpad = gst_object_ref (demux->active_srcpad);
+    GST_OBJECT_UNLOCK (demux);
+    res = gst_pad_push_event (srcpad, event);
+    gst_object_unref (srcpad);
+  } else
     gst_event_unref (event);
 
   return res;
@@ -283,7 +300,7 @@ gst_streamid_demux_event (GstPad * pad, GstObject * parent, GstEvent * event)
   /* ERRORS */
 no_stream_id:
   {
-    GST_WARNING_OBJECT (demux, "no stream_id found");
+    GST_ELEMENT_ERROR (demux, STREAM, DEMUX, (NULL), ("no stream_id found"));
     gst_event_unref (event);
     return FALSE;
   }
@@ -296,8 +313,9 @@ gst_streamid_demux_free_stream_id_pairs (gpointer key, gpointer value,
   gchar *stream_id = (gchar *) key;
   GstPad *srcpad = (GstPad *) value;
 
-  if (srcpad) {
+  if (srcpad != NULL) {
     gst_object_unref (srcpad);
+    srcpad = NULL;
   }
 
   if (stream_id) {
@@ -306,14 +324,45 @@ gst_streamid_demux_free_stream_id_pairs (gpointer key, gpointer value,
 }
 
 static void
+gst_streamid_demux_release_srcpads (const GValue * item,
+    GstStreamidDemux * demux)
+{
+  GstPad *pad = g_value_get_object (item);
+
+  if (pad != NULL) {
+    gst_pad_set_active (pad, FALSE);
+    gst_element_remove_pad (GST_ELEMENT_CAST (demux), pad);
+  }
+}
+
+static void
 gst_streamid_demux_reset (GstStreamidDemux * demux)
 {
-  if (demux->stream_id_pairs) {
+  GstIterator *it = NULL;
+
+  it = gst_element_iterate_src_pads (GST_ELEMENT_CAST (demux));
+  GstIteratorResult itret = GST_ITERATOR_OK;
+  while (itret == GST_ITERATOR_OK || itret == GST_ITERATOR_RESYNC) {
+    itret =
+        gst_iterator_foreach (it,
+        (GstIteratorForeachFunction) gst_streamid_demux_release_srcpads, demux);
+    gst_iterator_resync (it);
+  }
+  gst_iterator_free (it);
+
+  GST_OBJECT_LOCK (demux);
+  if (demux->stream_id_pairs != NULL) {
     g_hash_table_foreach (demux->stream_id_pairs,
         gst_streamid_demux_free_stream_id_pairs, NULL);
     g_hash_table_destroy (demux->stream_id_pairs);
     demux->stream_id_pairs = NULL;
   }
+
+  if (demux->active_srcpad != NULL) {
+    gst_object_unref (demux->active_srcpad);
+    demux->active_srcpad = NULL;
+  }
+  GST_OBJECT_UNLOCK (demux);
 }
 
 static GstStateChangeReturn
