@@ -54,6 +54,23 @@ enum
   PROP_LAST
 };
 
+/* signals */
+enum
+{
+  SIGNAL_VIDEO_TAGS_CHANGED,
+  SIGNAL_AUDIO_TAGS_CHANGED,
+  LAST_SIGNAL
+};
+
+typedef struct
+{
+  GstFCBin *fcbin;
+  gint stream_id;
+  GstLpSinkType type;
+} NotifyTagsData;
+
+static guint gst_fc_bin_signals[LAST_SIGNAL] = { 0 };
+
 static void gst_fc_bin_finalize (GObject * obj);
 static void gst_fc_bin_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * spec);
@@ -193,6 +210,44 @@ gst_fc_bin_class_init (GstFCBinClass * klass)
       g_param_spec_int ("n-text", "Number Text",
           "Total number of text streams", 0, G_MAXINT, 0,
           G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+
+  /**
+   * GstFCBin::video-tags-changed
+   * @fcbin: a #GstFCBin
+   * @stream: stream index with changed tags
+   *
+   * This signal is emitted whenever the tags of a video stream have changed.
+   * The application will most likely want to get the new tags.
+   *
+   * This signal may be emitted from the context of a GStreamer streaming thread.
+   * You can use gst_message_new_application() and gst_element_post_message()
+   * to notify your application's main thread.
+   *
+   */
+  gst_fc_bin_signals[SIGNAL_VIDEO_TAGS_CHANGED] =
+      g_signal_new ("video-tags-changed", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST,
+      G_STRUCT_OFFSET (GstFCBinClass, video_tags_changed), NULL, NULL,
+      g_cclosure_marshal_generic, G_TYPE_NONE, 1, G_TYPE_INT);
+
+  /**
+   * GstFCBin::audio-tags-changed
+   * @fcbin: a #GstFCBin
+   * @stream: stream index with changed tags
+   *
+   * This signal is emitted whenever the tags of an audio stream have changed.
+   * The application will most likely want to get the new tags.
+   *
+   * This signal may be emitted from the context of a GStreamer streaming thread.
+   * You can use gst_message_new_application() and gst_element_post_message()
+   * to notify your application's main thread.
+   *
+   */
+  gst_fc_bin_signals[SIGNAL_AUDIO_TAGS_CHANGED] =
+      g_signal_new ("audio-tags-changed", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST,
+      G_STRUCT_OFFSET (GstFCBinClass, audio_tags_changed), NULL, NULL,
+      g_cclosure_marshal_generic, G_TYPE_NONE, 1, G_TYPE_INT);
 
   //element_class->change_state = GST_DEBUG_FUNCPTR (gst_fc_bin_change_state);
   element_class->request_new_pad =
@@ -521,6 +576,34 @@ selector_active_pad_changed (GObject * selector, GParamSpec * pspec,
     g_object_notify (G_OBJECT (fcbin), property);
 }
 
+static void
+notify_tags_cb (GObject * object, GParamSpec * pspec, gpointer user_data)
+{
+  NotifyTagsData *ntdata = (NotifyTagsData *) user_data;
+  gint signal;
+
+  GST_DEBUG_OBJECT (ntdata->fcbin,
+      "notify_tags_cb : ntdata->type = %d, ntdata->stream_id = %d",
+      ntdata->type, ntdata->stream_id);
+
+  switch (ntdata->type) {
+    case GST_LP_SINK_TYPE_VIDEO:
+      signal = SIGNAL_VIDEO_TAGS_CHANGED;
+      break;
+    case GST_LP_SINK_TYPE_AUDIO:
+      signal = SIGNAL_AUDIO_TAGS_CHANGED;
+      break;
+    default:
+      signal = -1;
+      break;
+  }
+
+  if (signal >= 0) {
+    g_signal_emit (G_OBJECT (ntdata->fcbin), gst_fc_bin_signals[signal], 0,
+        ntdata->stream_id);
+  }
+}
+
 static GstPad *
 gst_fc_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
     const gchar * name, const GstCaps * caps)
@@ -533,6 +616,7 @@ gst_fc_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
   GstPad *sinkpad, *ghost_sinkpad;
   GstCaps *in_caps;
   gboolean is_subtitle = FALSE;
+  GstLpSinkType type;
 
   fcbin = GST_FC_BIN (element);
 
@@ -543,7 +627,11 @@ gst_fc_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
     if (array_has_value (fcbin->select[i].media_list, in_name)) {
       select = &fcbin->select[i];
 
-      if (i == GST_FC_BIN_STREAM_TEXT)
+      if (i == GST_FC_BIN_STREAM_AUDIO)
+        type = GST_LP_SINK_TYPE_AUDIO;
+      else if (i == GST_FC_BIN_STREAM_VIDEO)
+        type = GST_LP_SINK_TYPE_VIDEO;
+      else
         is_subtitle = TRUE;
       break;
     }
@@ -591,6 +679,21 @@ gst_fc_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
     gchar *pad_name = g_strdup_printf ("sink_%d", select->channels->len);
     if ((sinkpad = gst_element_get_request_pad (select->selector, pad_name))) {
       g_object_set_data (G_OBJECT (sinkpad), "fcbin.select", select);
+
+      if (g_object_class_find_property (G_OBJECT_GET_CLASS (sinkpad), "tags")) {
+        gulong notify_tags_handler = 0;
+        NotifyTagsData *ntdata;
+
+        ntdata = g_new0 (NotifyTagsData, 1);
+        ntdata->fcbin = fcbin;
+        ntdata->stream_id = select->channels->len;
+        ntdata->type = type;
+
+        notify_tags_handler =
+            g_signal_connect_data (G_OBJECT (sinkpad), "notify::tags",
+            G_CALLBACK (notify_tags_cb), ntdata, (GClosureNotify) g_free,
+            (GConnectFlags) 0);
+      }
 
       ghost_sinkpad = gst_ghost_pad_new (NULL, sinkpad);
       gst_pad_set_active (ghost_sinkpad, TRUE);

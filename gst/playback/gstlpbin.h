@@ -69,6 +69,8 @@ struct _GstLpBin
   gulong autoplug_factories_id;
   gulong autoplug_continue_id;
   gulong caps_video_id;
+  gulong audio_tags_changed_id;
+  gulong video_tags_changed_id;
 
   guint naudio;
   guint nvideo;
@@ -96,6 +98,9 @@ struct _GstLpBin
 
   /* this string contains all of elements from decodebin */
   gchar *elements_str;
+
+  GPtrArray *video_channels;    /* links to input-selector pads */
+  GPtrArray *audio_channels;    /* links to input-selector pads */
 };
 
 struct _GstLpBinClass
@@ -118,8 +123,28 @@ struct _GstLpBinClass
   GstBuffer *(*retrieve_thumbnail) (GstLpBin * lpbin, gint width, gint height,
       gchar * format);
 
+  /* notify app that the tags of audio/video streams changed */
+  void (*video_tags_changed) (GstLpBin * lpbin, gint stream);
+  void (*audio_tags_changed) (GstLpBin * lpbin, gint stream);
+
+  /* get audio/video tags for a stream */
+  GstTagList *(*get_video_tags) (GstLpBin * lpbin, gint stream);
+  GstTagList *(*get_audio_tags) (GstLpBin * lpbin, gint stream);
+
+  /* get audio/video pad for a stream */
+  GstPad *(*get_video_pad) (GstLpBin * lpbin, gint stream);
+  GstPad *(*get_audio_pad) (GstLpBin * lpbin, gint stream);
+
   /* get the caps of video sink element's sinkpad */
   GstStructure *(*caps_video) (GstLpBin * lpbin);
+};
+
+enum
+{
+  LPBIN_STREAM_AUDIO = 0,
+  LPBIN_STREAM_VIDEO,
+  LPBIN_STREAM_TEXT,
+  LPBIN_STREAM_LAST
 };
 
 GType gst_lp_bin_get_type (void);
