@@ -1665,7 +1665,7 @@ gst_lp_bin_set_property_table (GstLpBin * lpbin, gchar * maps)
     lpbin->property_pairs = g_hash_table_new (g_str_hash, g_str_equal);
   }
 
-  properties = g_strsplit_set (maps, ":,", -1);
+  properties = g_strsplit_set (maps, "|", -1);
 
   i = 0;
   while (i < g_strv_length (properties)) {
