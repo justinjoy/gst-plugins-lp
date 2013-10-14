@@ -35,7 +35,9 @@ G_BEGIN_DECLS
 #define GST_LP_SINK_LOCK(bin) (g_rec_mutex_lock (GST_LP_SINK_GET_LOCK(bin)))
 #define GST_LP_SINK_UNLOCK(bin) (g_rec_mutex_unlock (GST_LP_SINK_GET_LOCK(bin)))
 #define GST_SINK_CHAIN(c) ((GstSinkChain *)(c))
+#define GST_AV_SINK_CHAIN(c) ((GstAVSinkChain *)(c))
 typedef struct _GstSinkChain GstSinkChain;
+typedef struct _GstAVSinkChain GstAVSinkChain;
 typedef struct _GstLpSink GstLpSink;
 typedef struct _GstLpSinkClass GstLpSinkClass;
 
@@ -73,6 +75,8 @@ struct _GstLpSink
   gboolean audio_only;
   gboolean need_async_start;
   gboolean async_pending;
+
+  gboolean avsink;
 };
 
 struct _GstLpSinkClass
@@ -85,6 +89,7 @@ typedef enum
   GST_LP_SINK_TYPE_AUDIO = 0,
   GST_LP_SINK_TYPE_VIDEO = 1,
   GST_LP_SINK_TYPE_TEXT = 2,
+  GST_LP_SINK_TYPE_AV = 3,
   GST_LP_SINK_TYPE_LAST = 9,
   GST_LP_SINK_TYPE_FLUSHING = 10
 } GstLpSinkType;
@@ -95,9 +100,22 @@ struct _GstSinkChain
   GstLpSink *lpsink;
   GstElement *queue;
   GstElement *sink;
-  GstCaps *caps;
-  //GstLpSinkType type;
+  GstLpSinkType type;
   GstPad *bin_ghostpad;
+};
+
+struct _GstAVSinkChain
+{
+  GstSinkChain sinkchain;
+  GstElement *video_queue;
+  GstElement *audio_queue;
+  GstPad *video_ghostpad;
+  GstPad *audio_ghostpad;
+
+  GstPad *video_pad;            /* store audio/video sink's sinkpad */
+  GstPad *audio_pad;
+
+  gboolean construct_complete;
 };
 
 GType gst_lp_sink_get_type (void);

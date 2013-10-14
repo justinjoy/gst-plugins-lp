@@ -24,6 +24,7 @@
 G_BEGIN_DECLS
 #define FD_VIDEO_CAPS \
     "video/x-divx;" \
+    "video/x-h265;" \
     "video/x-h264;" \
     "video/x-intel-h263;" \
     "video/x-h263;" \
