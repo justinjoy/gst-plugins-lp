@@ -267,12 +267,12 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
   g_object_class_install_property (gobject_klass, PROP_VIDEO_SINK,
       g_param_spec_object ("video-sink", "Video Sink",
           "the video output element to use (NULL = default sink)",
-          GST_TYPE_ELEMENT, G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
+          GST_TYPE_ELEMENT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property (gobject_klass, PROP_AUDIO_SINK,
       g_param_spec_object ("audio-sink", "Audio Sink",
           "the audio output element to use (NULL = default sink)",
-          GST_TYPE_ELEMENT, G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
+          GST_TYPE_ELEMENT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property (gobject_klass, PROP_THUMBNAIL_MODE,
       g_param_spec_boolean ("thumbnail-mode", "Thumbnail mode",
@@ -868,6 +868,16 @@ gst_lp_bin_get_property (GObject * object, guint prop_id, GValue * value,
       GST_LP_BIN_UNLOCK (lpbin);
       break;
     }
+    case PROP_VIDEO_SINK:
+      g_value_take_object (value,
+          gst_lp_bin_get_current_sink (lpbin, &lpbin->video_sink,
+              "video", GST_PLAY_SINK_TYPE_VIDEO));
+      break;
+    case PROP_AUDIO_SINK:
+      g_value_take_object (value,
+          gst_lp_bin_get_current_sink (lpbin, &lpbin->audio_sink,
+              "audio", GST_PLAY_SINK_TYPE_AUDIO));
+      break;
     case PROP_MUTE:
       break;
     case PROP_THUMBNAIL_MODE:
