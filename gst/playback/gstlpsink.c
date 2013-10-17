@@ -578,6 +578,25 @@ gst_lp_sink_do_reconfigure (GstLpSink * lpsink, GstLpSinkType type,
   return TRUE;
 }
 
+static void
+gst_lp_sink_setup_element (GstLpSink * lpsink, GstElement ** streamid_demux,
+    GstPad ** ghost_sinkpad, const gchar * pad_name)
+{
+  GstPad *demux_sinkpad;
+
+  *streamid_demux = gst_element_factory_make ("streamiddemux", NULL);
+
+  gst_bin_add (GST_BIN_CAST (lpsink), *streamid_demux);
+  gst_element_set_state (*streamid_demux, GST_STATE_PAUSED);
+
+  demux_sinkpad = gst_element_get_static_pad (*streamid_demux, "sink");
+  *ghost_sinkpad = gst_ghost_pad_new (pad_name, demux_sinkpad);
+  g_signal_connect (G_OBJECT (demux_sinkpad), "notify::caps",
+      G_CALLBACK (caps_notify_cb), lpsink);
+
+  gst_object_unref (demux_sinkpad);
+}
+
 /**
  * gst_lp_sink_request_pad
  * @lpsink: a #GstLpSink
@@ -591,70 +610,34 @@ GstPad *
 gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
 {
   GstPad *res = NULL;
-  const gchar *pad_name;
-  const gchar *sink_name;
-  GstElement *osel;
-  GstPad *demux_sinkpad, *demux_srcpad;
 
   GST_LP_SINK_LOCK (lpsink);
 
   switch (type) {
     case GST_LP_SINK_TYPE_AUDIO:
-      if (lpsink->thumbnail_mode)
-        sink_name = "fakesink";
-      else
-        sink_name = "adecsink";
-      pad_name = "audio_sink";
-      if (!lpsink->audio_pad) {
-        lpsink->audio_streamid_demux =
-            gst_element_factory_make ("streamiddemux", NULL);
-        demux_sinkpad =
-            gst_element_get_static_pad (lpsink->audio_streamid_demux, "sink");
-        gst_bin_add (GST_BIN_CAST (lpsink), lpsink->audio_streamid_demux);
-        gst_element_set_state (lpsink->audio_streamid_demux, GST_STATE_PAUSED);
+      if (!lpsink->audio_pad)
+        gst_lp_sink_setup_element (lpsink, &lpsink->audio_streamid_demux,
+            &lpsink->audio_pad, "audio_sink");
 
-        lpsink->audio_pad = gst_ghost_pad_new (pad_name, demux_sinkpad);
-        g_signal_connect (G_OBJECT (demux_sinkpad), "notify::caps",
-            G_CALLBACK (caps_notify_cb), lpsink);
-      }
       res = lpsink->audio_pad;
       break;
     case GST_LP_SINK_TYPE_VIDEO:
-      sink_name = "vdecsink";
-      pad_name = "video_sink";
-      if (!lpsink->video_pad) {
-        lpsink->video_streamid_demux =
-            gst_element_factory_make ("streamiddemux", NULL);
-        demux_sinkpad =
-            gst_element_get_static_pad (lpsink->video_streamid_demux, "sink");
-        gst_bin_add (GST_BIN_CAST (lpsink), lpsink->video_streamid_demux);
-        gst_element_set_state (lpsink->video_streamid_demux, GST_STATE_PAUSED);
+      if (!lpsink->video_pad)
+        gst_lp_sink_setup_element (lpsink, &lpsink->video_streamid_demux,
+            &lpsink->video_pad, "video_sink");
 
-        lpsink->video_pad = gst_ghost_pad_new (pad_name, demux_sinkpad);
-        g_signal_connect (G_OBJECT (demux_sinkpad), "notify::caps",
-            G_CALLBACK (caps_notify_cb), lpsink);
-      }
       res = lpsink->video_pad;
       break;
     case GST_LP_SINK_TYPE_TEXT:
-      sink_name = "appsink";
-      pad_name = "text_sink";
-      lpsink->text_streamid_demux =
-          gst_element_factory_make ("streamiddemux", NULL);
-      demux_sinkpad =
-          gst_element_get_static_pad (lpsink->text_streamid_demux, "sink");
-      gst_bin_add (GST_BIN_CAST (lpsink), lpsink->text_streamid_demux);
-      gst_element_set_state (lpsink->text_streamid_demux, GST_STATE_PAUSED);
-
-      lpsink->text_sinkbin = gst_element_factory_make ("lptsinkbin", NULL);
-      gst_bin_add (GST_BIN_CAST (lpsink), lpsink->text_sinkbin);
-      GST_OBJECT_FLAG_SET (lpsink->text_sinkbin, GST_ELEMENT_FLAG_SINK);
-
       if (!lpsink->text_pad) {
-        lpsink->text_pad = gst_ghost_pad_new (pad_name, demux_sinkpad);
-        g_signal_connect (G_OBJECT (demux_sinkpad), "notify::caps",
-            G_CALLBACK (caps_notify_cb), lpsink);
+        gst_lp_sink_setup_element (lpsink, &lpsink->text_streamid_demux,
+            &lpsink->text_pad, "text_sink");
+
+        lpsink->text_sinkbin = gst_element_factory_make ("lptsinkbin", NULL);
+        gst_bin_add (GST_BIN_CAST (lpsink), lpsink->text_sinkbin);
+        GST_OBJECT_FLAG_SET (lpsink->text_sinkbin, GST_ELEMENT_FLAG_SINK);
       }
+
       res = lpsink->text_pad;
       break;
     default:
