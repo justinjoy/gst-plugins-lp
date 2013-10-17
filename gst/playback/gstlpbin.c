@@ -871,12 +871,12 @@ gst_lp_bin_get_property (GObject * object, guint prop_id, GValue * value,
     case PROP_VIDEO_SINK:
       g_value_take_object (value,
           gst_lp_bin_get_current_sink (lpbin, &lpbin->video_sink,
-              "video", GST_PLAY_SINK_TYPE_VIDEO));
+              "video", GST_LP_SINK_TYPE_VIDEO));
       break;
     case PROP_AUDIO_SINK:
       g_value_take_object (value,
           gst_lp_bin_get_current_sink (lpbin, &lpbin->audio_sink,
-              "audio", GST_PLAY_SINK_TYPE_AUDIO));
+              "audio", GST_LP_SINK_TYPE_AUDIO));
       break;
     case PROP_MUTE:
       break;
