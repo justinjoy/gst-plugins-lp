@@ -104,6 +104,8 @@ struct _GstLpBin
 
   GPtrArray *video_channels;    /* links to input-selector pads */
   GPtrArray *audio_channels;    /* links to input-selector pads */
+
+  gboolean audio_only;          /* Whether or not audio and video stream exist */
 };
 
 struct _GstLpBinClass

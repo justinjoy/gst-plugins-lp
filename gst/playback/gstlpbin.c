@@ -108,6 +108,8 @@ static void audio_tags_changed_cb (GstElement * fcbin,
     gint stream_id, GstLpBin * lpbin);
 static void video_tags_changed_cb (GstElement * fcbin,
     gint stream_id, GstLpBin * lpbin);
+static void element_configured_cb (GstElement * fcbin,
+    gint type, GstPad * pad, GstLpBin * lpbin);
 
 /* private functions */
 static gboolean gst_lp_bin_setup_element (GstLpBin * lpbin);
@@ -647,6 +649,8 @@ gst_lp_bin_init (GstLpBin * lpbin)
 
   lpbin->buffer_duration = DEFAULT_BUFFER_DURATION;
   lpbin->buffer_size = DEFAULT_BUFFER_SIZE;
+
+  lpbin->audio_only = TRUE;
 }
 
 static void
@@ -1166,6 +1170,7 @@ pad_added_cb (GstElement * decodebin, GstPad * pad, GstLpBin * lpbin)
   fcbin_srcpad = g_object_get_data (G_OBJECT (fcbin_sinkpad), "fcbin.srcpad");
 
   if (g_str_has_prefix (name, "video/")) {
+    lpbin->audio_only = FALSE;
     if (!lpbin->video_pad)
       lpbin->video_pad = fcbin_srcpad;
     /* store the pad in the array */
@@ -1204,43 +1209,35 @@ pad_removed_cb (GstElement * decodebin, GstPad * pad, GstLpBin * lpbin)
 static void
 no_more_pads_cb (GstElement * decodebin, GstLpBin * lpbin)
 {
-  GST_DEBUG_OBJECT (lpbin, "no more pads callback");
-  GstPad *lpsink_sinkpad;
+  GST_INFO_OBJECT (lpbin, "no more pads callback");
 
-  GST_OBJECT_LOCK (lpbin);
-  if (lpbin->audio_sink) {
-    GST_DEBUG_OBJECT (lpbin, "setting custom audio sink %" GST_PTR_FORMAT,
-        lpbin->audio_sink);
-    gst_lp_sink_set_sink (lpbin->lpsink, GST_LP_SINK_TYPE_AUDIO,
-        lpbin->audio_sink);
-  }
-
-  if (lpbin->video_sink) {
-    GST_DEBUG_OBJECT (lpbin, "setting custom video sink %" GST_PTR_FORMAT,
-        lpbin->video_sink);
-    gst_lp_sink_set_sink (lpbin->lpsink, GST_LP_SINK_TYPE_VIDEO,
-        lpbin->video_sink);
-  }
-  GST_OBJECT_UNLOCK (lpbin);
-
-  if (lpbin->video_pad) {
-    lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, "video_sink");
-    gst_pad_link (lpbin->video_pad, lpsink_sinkpad);
-  } else {
+  if (lpbin->audio_only) {
     if (g_object_class_find_property (G_OBJECT_GET_CLASS (lpbin->lpsink),
             "audio-only"))
       g_object_set (lpbin->lpsink, "audio-only", TRUE, NULL);
-    else
-      GST_WARNING_OBJECT (lpbin, "%s doesn't have audio-only property.",
-          gst_element_get_name (lpbin->lpsink));
+    GST_INFO_OBJECT (lpbin, "no more pads callback : audio-only set as TRUE");
+  }
+}
+
+static void
+element_configured_cb (GstElement * fcbin, gint type, GstPad * pad,
+    GstLpBin * lpbin)
+{
+  GstPad *lpsink_sinkpad = NULL;
+
+  if (gst_pad_is_linked (pad)) {
+    GST_DEBUG_OBJECT (lpbin, "element_configured_cb : [%s:%d] already linked",
+        GST_DEBUG_PAD_NAME (pad), type);
+    return;
   }
 
-  if (lpbin->audio_pad) {
+  if (type == GST_LP_SINK_TYPE_AUDIO) {
     lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, "audio_sink");
-    gst_pad_link (lpbin->audio_pad, lpsink_sinkpad);
-  }
-
-  if (lpbin->text_pad) {
+    gst_pad_link (pad, lpsink_sinkpad);
+  } else if (type == GST_LP_SINK_TYPE_VIDEO) {
+    lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, "video_sink");
+    gst_pad_link (pad, lpsink_sinkpad);
+  } else if (type == GST_LP_SINK_TYPE_TEXT) {
     lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, "text_sink");
     gst_pad_link (lpbin->text_pad, lpsink_sinkpad);
   }
@@ -1360,6 +1357,9 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
   lpbin->video_tags_changed_id =
       g_signal_connect (lpbin->fcbin, "video-tags-changed",
       G_CALLBACK (video_tags_changed_cb), lpbin);
+
+  g_signal_connect (lpbin->fcbin, "element-configured",
+      G_CALLBACK (element_configured_cb), lpbin);
 
   if (lpbin->lpsink && lpbin->thumbnail_mode) {
     GST_DEBUG_OBJECT (lpbin,

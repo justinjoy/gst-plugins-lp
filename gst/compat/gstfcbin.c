@@ -59,6 +59,7 @@ enum
 {
   SIGNAL_VIDEO_TAGS_CHANGED,
   SIGNAL_AUDIO_TAGS_CHANGED,
+  SIGNAL_ELEMENT_CONFIGURED,
   LAST_SIGNAL
 };
 
@@ -248,6 +249,19 @@ gst_fc_bin_class_init (GstFCBinClass * klass)
       G_SIGNAL_RUN_LAST,
       G_STRUCT_OFFSET (GstFCBinClass, audio_tags_changed), NULL, NULL,
       g_cclosure_marshal_generic, G_TYPE_NONE, 1, G_TYPE_INT);
+
+  /**
+   * GstFCBin::element-configured
+   * @fcbin: a #GstFCBin
+   *
+   * This signal is emitted after input-selector or funnel element has been created and linked.
+   *
+   */
+  gst_fc_bin_signals[SIGNAL_ELEMENT_CONFIGURED] =
+      g_signal_new ("element-configured", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST,
+      G_STRUCT_OFFSET (GstFCBinClass, element_configured), NULL, NULL,
+      g_cclosure_marshal_generic, G_TYPE_NONE, 2, G_TYPE_INT, GST_TYPE_PAD);
 
   //element_class->change_state = GST_DEBUG_FUNCPTR (gst_fc_bin_change_state);
   element_class->request_new_pad =
@@ -604,44 +618,27 @@ notify_tags_cb (GObject * object, GParamSpec * pspec, gpointer user_data)
   }
 }
 
-static GstPad *
-gst_fc_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
-    const gchar * name, const GstCaps * caps)
+static void
+gst_fc_bin_do_configure (GstFCBin * fcbin, GstPad * ghost_sinkpad,
+    GstLpSinkType type, gboolean multiple_stream)
 {
-  GstFCBin *fcbin;
-  const GstStructure *s;
-  const gchar *in_name;
-  gint i;
-  GstFCSelect *select;
-  GstPad *sinkpad, *ghost_sinkpad;
-  GstCaps *in_caps;
-  gboolean is_subtitle = FALSE;
-  GstLpSinkType type;
+  GstFCSelect *select = NULL;
+  GstPad *sinkpad = NULL;
 
-  fcbin = GST_FC_BIN (element);
-
-  s = gst_caps_get_structure (caps, 0);
-  in_name = gst_structure_get_name (s);
-
-  for (i = 0; i < GST_FC_BIN_STREAM_LAST; i++) {
-    if (array_has_value (fcbin->select[i].media_list, in_name)) {
-      select = &fcbin->select[i];
-
-      if (i == GST_FC_BIN_STREAM_AUDIO)
-        type = GST_LP_SINK_TYPE_AUDIO;
-      else if (i == GST_FC_BIN_STREAM_VIDEO)
-        type = GST_LP_SINK_TYPE_VIDEO;
-      else
-        is_subtitle = TRUE;
-      break;
-    }
+  if (type == GST_LP_SINK_TYPE_AUDIO) {
+    select = &fcbin->select[GST_FC_BIN_STREAM_AUDIO];
+  } else if (type == GST_LP_SINK_TYPE_VIDEO) {
+    select = &fcbin->select[GST_FC_BIN_STREAM_VIDEO];
+  } else if (type == GST_LP_SINK_TYPE_TEXT) {
+    select = &fcbin->select[GST_FC_BIN_STREAM_TEXT];
+  } else {
+    GST_ERROR_OBJECT (fcbin, "unknown type for pad %s",
+        GST_DEBUG_PAD_NAME (ghost_sinkpad));
+    return;
   }
 
-  if (select == NULL)
-    goto unknown_type;
-
   if (select->selector == NULL) {
-    if (is_subtitle)
+    if (multiple_stream)
       select->selector = gst_element_factory_make ("funnel", NULL);
     else
       select->selector = gst_element_factory_make ("input-selector", NULL);
@@ -651,7 +648,7 @@ gst_fc_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
          gst_missing_element_message_new (GST_ELEMENT_CAST (fcbin),
          "input-selector")); */
     } else {
-      if (!is_subtitle) {
+      if (!multiple_stream) {
         g_object_set (select->selector, "sync-streams", TRUE, NULL);
 
         g_signal_connect (select->selector, "notify::active-pad",
@@ -671,10 +668,9 @@ gst_fc_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
       sel_srcpad = gst_element_get_static_pad (select->selector, "src");
       select->srcpad = gst_ghost_pad_new (NULL, sel_srcpad);
       gst_pad_set_active (select->srcpad, TRUE);
-      gst_element_add_pad (element, select->srcpad);
+      gst_element_add_pad (GST_ELEMENT (fcbin), select->srcpad);
     }
   }
-
   if (select->selector) {
     gchar *pad_name = g_strdup_printf ("sink_%d", select->channels->len);
     if ((sinkpad = gst_element_get_request_pad (select->selector, pad_name))) {
@@ -695,10 +691,14 @@ gst_fc_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
             (GConnectFlags) 0);
       }
 
-      ghost_sinkpad = gst_ghost_pad_new (NULL, sinkpad);
-      gst_pad_set_active (ghost_sinkpad, TRUE);
-      gst_element_add_pad (element, ghost_sinkpad);
+      gst_ghost_pad_set_target (GST_GHOST_PAD_CAST (ghost_sinkpad), sinkpad);
+      //gst_pad_set_active (ghost_sinkpad, TRUE);
+      //gst_element_add_pad (element, ghost_sinkpad);
       g_object_set_data (G_OBJECT (ghost_sinkpad), "fcbin.srcpad",
+          select->srcpad);
+
+      g_signal_emit (G_OBJECT (fcbin),
+          gst_fc_bin_signals[SIGNAL_ELEMENT_CONFIGURED], 0, type,
           select->srcpad);
 
       g_ptr_array_add (select->channels, sinkpad);
@@ -706,11 +706,80 @@ gst_fc_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
     g_free (pad_name);
   }
 
-done:
-  return ghost_sinkpad;
+}
 
-unknown_type:
-  GST_ERROR_OBJECT (fcbin, "unknown type for pad %s", name);
+static void
+caps_notify_cb (GstPad * pad, GParamSpec * unused, GstFCBin * fcbin)
+{
+  GstCaps *caps = NULL;
+  gchar *caps_str = NULL;
+  GstStructure *s = NULL;
+  gboolean multiple_stream = FALSE;
+
+  g_object_get (pad, "caps", &caps, NULL);
+  s = gst_caps_get_structure (caps, 0);
+  caps_str = gst_caps_to_string (caps);
+
+  GST_INFO_OBJECT (fcbin, "caps_notify_cb : caps = %s", caps_str);
+
+  if (gst_structure_has_field (s, "multiple-stream")) {
+    multiple_stream =
+        g_value_get_boolean (gst_structure_get_value (s, "multiple-stream"));
+  }
+
+  GST_INFO_OBJECT (fcbin, "caps_notify_cb : multiple_stream = %d",
+      multiple_stream);
+
+  if (gst_ghost_pad_get_target (GST_GHOST_PAD (pad)) != NULL) {
+    GST_DEBUG_OBJECT (fcbin,
+        "caps_notify_cb : pad = %s already has target",
+        GST_DEBUG_PAD_NAME (pad));
+    goto done;
+  }
+
+  GST_FC_BIN_LOCK (fcbin);
+  if (g_str_has_prefix (caps_str, "video/")
+      || g_str_has_prefix (caps_str, "image/jpeg")) {
+    gst_fc_bin_do_configure (fcbin, pad, GST_LP_SINK_TYPE_VIDEO,
+        multiple_stream);
+  } else if (g_str_has_prefix (caps_str, "audio/")) {
+    gst_fc_bin_do_configure (fcbin, pad, GST_LP_SINK_TYPE_AUDIO,
+        multiple_stream);
+  } else if (g_str_has_prefix (caps_str, "text/")
+      || g_str_has_prefix (caps_str, "application/")
+      || g_str_has_prefix (caps_str, "subpicture/")) {
+    gst_fc_bin_do_configure (fcbin, pad, GST_LP_SINK_TYPE_TEXT, TRUE);
+  }
+  GST_FC_BIN_UNLOCK (fcbin);
+
+done:
+  if (caps_str)
+    g_free (caps_str);
+  if (caps)
+    gst_caps_unref (caps);
+}
+
+static GstPad *
+gst_fc_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
+    const gchar * name, const GstCaps * caps)
+{
+  GstFCBin *fcbin;
+  GstPad *ghost_sinkpad = NULL;
+  const GstStructure *s;
+  const gchar *in_name;
+
+  fcbin = GST_FC_BIN (element);
+
+  s = gst_caps_get_structure (caps, 0);
+  in_name = gst_structure_get_name (s);
+
+  ghost_sinkpad = gst_ghost_pad_new_no_target (NULL, GST_PAD_SINK);
+  g_signal_connect (G_OBJECT (ghost_sinkpad), "notify::caps",
+      G_CALLBACK (caps_notify_cb), fcbin);
+
+  gst_pad_set_active (ghost_sinkpad, TRUE);
+  gst_element_add_pad (GST_ELEMENT_CAST (fcbin), ghost_sinkpad);
+
   return ghost_sinkpad;
 }
 

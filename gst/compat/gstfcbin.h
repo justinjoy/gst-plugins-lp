@@ -77,6 +77,8 @@ struct _GstFCBinClass
   /* notify lpbin that the tags of audio/video streams changed */
   void (*audio_tags_changed) (GstFCBin * fcbin, gint stream);
   void (*video_tags_changed) (GstFCBin * fcbin, gint stream);
+
+  void (*element_configured) (GstFCBin * fcbin, gint type, GstPad * pad);
 };
 
 GType gst_fc_bin_get_type (void);
