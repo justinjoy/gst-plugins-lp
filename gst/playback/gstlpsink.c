@@ -518,7 +518,8 @@ caps_notify_cb (GstPad * pad, GParamSpec * unused, GstLpSink * lpsink)
     goto done;
   }
 
-  if (g_str_has_prefix (caps_str, "video/")) {
+  if (g_str_has_prefix (caps_str, "video/")
+      || g_str_has_prefix (caps_str, "image/jpeg")) {
     gst_lp_sink_do_reconfigure (lpsink, GST_LP_SINK_TYPE_VIDEO, active_pad);
   } else if (g_str_has_prefix (caps_str, "audio/")) {
     gst_lp_sink_do_reconfigure (lpsink, GST_LP_SINK_TYPE_AUDIO, active_pad);
