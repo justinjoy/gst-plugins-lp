@@ -531,13 +531,6 @@ gst_lp_bin_bus_cb (GstBus * bus, GstMessage * message, gpointer data)
                 elem_factory = gst_element_get_factory (element);
                 klass_type = gst_element_factory_get_klass (elem_factory);
 
-                if (g_strcmp0 (klass_type, "") || klass_type == NULL) {
-                  element = NULL;
-                  elem_factory = NULL;
-                  klass_type = NULL;
-                  break;
-                }
-
                 if (g_strrstr (klass_type, "Sink/Image")) {
                   if (g_object_class_find_property (G_OBJECT_GET_CLASS
                           (element), "thumbnail-mode")) {
@@ -551,7 +544,6 @@ gst_lp_bin_bus_cb (GstBus * bus, GstMessage * message, gpointer data)
                         elem_name);
                 }
 
-                g_free (klass_type);
                 elem_factory = NULL;
                 element = NULL;
                 break;
