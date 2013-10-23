@@ -138,6 +138,11 @@ static GstTagList *gst_lp_bin_get_video_tags (GstLpBin * lpbin, gint stream);
 static GstTagList *gst_lp_bin_get_audio_tags (GstLpBin * lpbin, gint stream);
 static GstPad *gst_lp_bin_get_video_pad (GstLpBin * lpbin, gint stream);
 static GstPad *gst_lp_bin_get_audio_pad (GstLpBin * lpbin, gint stream);
+static gboolean gst_lp_bin_get_buffering_query (GstQuery * query,
+    GstElement * element, gint * percent, gint64 * start, gint64 * stop);
+static gboolean gst_lp_bin_find_queue (GstQuery * query, gchar * elem_name,
+    gchar * find_name, GObject * child_elem, gint * n_queue,
+    gint * total_percent, gint64 * total_start, gint64 * total_stop);
 
 static GstElementClass *parent_class;
 
@@ -674,16 +679,215 @@ static gboolean
 gst_lp_bin_query (GstElement * element, GstQuery * query)
 {
   GstLpBin *lpbin = GST_LP_BIN (element);
-
+  GstFormat format;
+  GstBufferingMode mode;
+  gint percent, avg_in, avg_out;
+  gint total_percent, queue, n_queue;
+  gint64 start, stop, estimated_total, buffering_left;
+  gint64 total_start, total_stop;
   gboolean ret;
 
+  total_percent = n_queue = 0;
+  total_start = total_stop = 0;
   GST_LP_BIN_LOCK (lpbin);
 
-  ret = GST_ELEMENT_CLASS (parent_class)->query (element, query);
+  switch (GST_QUERY_TYPE (query)) {
+    case GST_QUERY_BUFFERING:
+    {
+      /*1. get the children list to pull out the queue element */
+      GList *walk;
+      gchar *element_name;
+
+      for (walk = GST_BIN (lpbin)->children; walk; walk = g_list_next (walk)) {
+        GstElement *elem;
+
+        elem = GST_ELEMENT_CAST (walk->data);
+        element_name = gst_element_get_name (elem);
+
+        if (g_strrstr (element_name, "uridecodebin")) {
+          gint num_child;
+          guint index;
+          GObject *child;
+          gchar *child_name;
+
+          num_child = gst_child_proxy_get_children_count (elem);
+          for (index = 0; index < num_child; index++) {
+            child = gst_child_proxy_get_child_by_index (elem, index);
+            child_name = gst_element_get_name (child);
+
+            /* find Queue2 element */
+            if (g_strrstr (child_name, "queue")) {
+              if (gst_lp_bin_get_buffering_query ( /*lpbin, */ query, child,
+                      &percent, &start, &stop)) {
+                /*2. Sum each value */
+                n_queue++;
+                total_percent += percent;
+                total_start += start;
+                total_stop += stop;
+
+                gst_query_parse_buffering_stats (query, &mode, &avg_in,
+                    &avg_out, &buffering_left);
+                if (avg_out)
+                  gst_query_set_buffering_stats (query, GST_BUFFERING_DOWNLOAD,
+                      avg_in, avg_out, buffering_left);
+                ret = TRUE;
+              }
+            }
+
+            /*find MultiQueue element */
+            if (ret =
+                gst_lp_bin_find_queue (query, child_name, "decodebin", child,
+                    &queue, &percent, &start, &stop)) {
+              n_queue += queue;
+              total_percent += percent;
+              total_start += start;
+              total_stop += stop;
+            }
+          }
+
+          g_free (child_name);
+        }
+
+        /*find lpsink */
+        if (g_strrstr (element_name, "lpsink")) {
+          gint num_child;
+          guint index;
+          GObject *child;
+          gchar *child_name;
+
+          num_child = gst_child_proxy_get_children_count (elem);
+
+          for (index = 0; index < num_child; index++) {
+            child = gst_child_proxy_get_child_by_index (elem, index);
+            child_name = gst_element_get_name (child);
+
+            /*find vbin's queue */
+            if (ret = gst_lp_bin_find_queue (query, child_name, "vbin", child,
+                    &queue, &percent, &start, &stop)) {
+              n_queue += queue;
+              total_percent += percent;
+              total_start += start;
+              total_stop += stop;
+            }
+
+            /*find abin's queue */
+            if (ret = gst_lp_bin_find_queue (query, child_name, "abin", child,
+                    &queue, &percent, &start, &stop)) {
+              n_queue += queue;
+              total_percent += percent;
+              total_start += start;
+              total_stop += stop;
+            }
+          }
+
+          g_free (child_name);
+        }
+
+      }
+
+      if (!n_queue) {
+        GST_WARNING_OBJECT (lpbin, "Buffeing query fail");
+        ret = FALSE;
+        break;
+      }
+
+      gst_query_parse_buffering_range (query, &format, NULL, NULL, NULL);
+
+      total_percent = (total_percent / n_queue);
+      if (total_percent < 0)
+        total_percent = 0;
+      else if (total_percent > 100)
+        total_percent = 100;
+
+      gst_query_set_buffering_percent (query, NULL, total_percent);
+      gst_query_set_buffering_range (query, format, total_start, total_stop,
+          NULL);
+
+      g_free (element_name);
+
+      break;
+    }
+    default:
+      ret = GST_ELEMENT_CLASS (parent_class)->query (element, query);
+      break;
+  }
 
   GST_LP_BIN_UNLOCK (lpbin);
 
   return ret;
+}
+
+static gboolean
+gst_lp_bin_find_queue (GstQuery * query, gchar * elem_name, gchar * find_name,
+    GObject * child_elem, gint * n_queue, gint * total_percent,
+    gint64 * total_start, gint64 * total_stop)
+{
+  GObject *child;
+  gchar *child_name;
+  gint percent, num_child;
+  gint temp, temp2;
+  guint index;
+  gint64 start, stop;
+  gint64 temp3, temp4;
+  gboolean ret = FALSE;
+
+  temp = temp2 = 0;
+  temp3 = temp4 = 0;
+  percent = start = stop = 0;
+
+  if (g_strrstr (elem_name, find_name)) {
+    num_child = gst_child_proxy_get_children_count (child_elem);
+
+    for (index = 0; index < num_child; index++) {
+      child = gst_child_proxy_get_child_by_index (child_elem, index);
+      child_name = gst_element_get_name (child);
+
+      if (g_strrstr (child_name, "queue")) {
+        if (gst_lp_bin_get_buffering_query (query, child, &percent, &start,
+                &stop)) {
+          temp++;
+          temp2 += percent;
+          temp3 += start;
+          temp4 += stop;
+
+          ret = TRUE;
+        }
+      }
+    }
+  }
+
+  if (ret) {
+    *n_queue = temp;
+    *total_percent = temp2;
+    *total_start = temp3;
+    *total_stop = temp4;
+  }
+
+  return ret;
+}
+
+static gboolean
+gst_lp_bin_get_buffering_query (GstQuery * query, GstElement * element,
+    gint * q_percent, gint64 * q_start, gint64 * q_stop)
+{
+  GstFormat format;
+  gint percent;
+  gint64 start, stop, estimated_total;
+  gboolean busy;
+
+  if (gst_element_query (element, query)) {
+    gst_query_parse_buffering_percent (query, &busy, &percent);
+    gst_query_parse_buffering_range (query, &format, &start, &stop,
+        &estimated_total);
+
+    *q_percent = percent;
+    *q_start = start;
+    *q_stop = stop;
+
+    return TRUE;
+  }
+
+  return FALSE;
 }
 
 static void
