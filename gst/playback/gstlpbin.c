@@ -685,6 +685,8 @@ gst_lp_bin_query (GstElement * element, GstQuery * query)
   gint total_percent, queue, n_queue;
   gint64 start, stop, estimated_total, buffering_left;
   gint64 total_start, total_stop;
+  GstElementFactory *factory = NULL;
+  const gchar *klass = NULL;
   gboolean ret;
 
   total_percent = n_queue = 0;
@@ -692,6 +694,19 @@ gst_lp_bin_query (GstElement * element, GstQuery * query)
   GST_LP_BIN_LOCK (lpbin);
 
   switch (GST_QUERY_TYPE (query)) {
+    case GST_QUERY_DURATION:
+      factory = gst_element_get_factory (lpbin->source);
+      klass = gst_element_factory_get_klass (factory);
+      gst_query_parse_duration (query, &format, NULL);
+
+      if (g_strrstr (klass, "Source/Network") && format == GST_FORMAT_BYTES) {
+        GST_INFO_OBJECT (lpbin,
+            "gst_lp_bin_query : direct call source element about GST_QUERY_DURATION with GST_FORMAT_BYTES");
+        ret = gst_element_query (lpbin->source, query);
+      } else {
+        ret = GST_ELEMENT_CLASS (parent_class)->query (element, query);
+      }
+      break;
     case GST_QUERY_BUFFERING:
     {
       /*1. get the children list to pull out the queue element */
