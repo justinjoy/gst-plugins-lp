@@ -48,6 +48,8 @@ enum
   PROP_AUDIO_RESOURCE,
   PROP_MUTE,
   PROP_SMART_PROPERTIES,
+  PROP_BUFFER_SIZE,
+  PROP_BUFFER_DURATION,
   PROP_LAST
 };
 
@@ -70,6 +72,8 @@ enum
 
 #define DEFAULT_THUMBNAIL_MODE FALSE
 #define DEFAULT_USE_BUFFERING FALSE
+#define DEFAULT_BUFFER_DURATION   -1
+#define DEFAULT_BUFFER_SIZE       -1
 
 /* GstObject overriding */
 static void gst_lp_bin_class_init (GstLpBinClass * klass);
@@ -313,6 +317,18 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
       g_param_spec_string ("smart-properties", "Smart Properties",
           "Information of properties in such key and value", NULL,
           G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property (gobject_klass, PROP_BUFFER_SIZE,
+      g_param_spec_int ("buffer-size", "Buffer size (bytes)",
+          "Buffer size when buffering network streams",
+          -1, G_MAXINT, DEFAULT_BUFFER_SIZE,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property (gobject_klass, PROP_BUFFER_DURATION,
+      g_param_spec_int64 ("buffer-duration", "Buffer duration (ns)",
+          "Buffer duration when buffering network streams",
+          -1, G_MAXINT64, DEFAULT_BUFFER_DURATION,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   gst_lp_bin_signals[SIGNAL_ABOUT_TO_FINISH] =
       g_signal_new ("about-to-finish", G_TYPE_FROM_CLASS (klass),
@@ -626,6 +642,9 @@ gst_lp_bin_init (GstLpBin * lpbin)
   g_rw_lock_init (&lock);
   lpbin->property_pairs = NULL;
   lpbin->elements_str = NULL;
+
+  lpbin->buffer_duration = DEFAULT_BUFFER_DURATION;
+  lpbin->buffer_size = DEFAULT_BUFFER_SIZE;
 }
 
 static void
@@ -995,6 +1014,12 @@ gst_lp_bin_set_property (GObject * object, guint prop_id,
     case PROP_SMART_PROPERTIES:
       gst_lp_bin_set_property_table (lpbin, g_value_get_string (value));
       break;
+    case PROP_BUFFER_SIZE:
+      lpbin->buffer_size = g_value_get_int (value);
+      break;
+    case PROP_BUFFER_DURATION:
+      lpbin->buffer_duration = g_value_get_int64 (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
   }
@@ -1096,6 +1121,16 @@ gst_lp_bin_get_property (GObject * object, guint prop_id, GValue * value,
       break;
     case PROP_USE_BUFFERING:
       g_value_set_boolean (value, lpbin->use_buffering);
+      break;
+    case PROP_BUFFER_SIZE:
+      GST_OBJECT_LOCK (lpbin);
+      g_value_set_int (value, lpbin->buffer_size);
+      GST_OBJECT_UNLOCK (lpbin);
+      break;
+    case PROP_BUFFER_DURATION:
+      GST_OBJECT_LOCK (lpbin);
+      g_value_set_int64 (value, lpbin->buffer_duration);
+      GST_OBJECT_UNLOCK (lpbin);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -1273,7 +1308,10 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
 
   lpbin->uridecodebin = gst_element_factory_make ("uridecodebin", NULL);
 
-  g_object_set (lpbin->uridecodebin, "caps", fd_caps, "uri", lpbin->uri, NULL);
+  g_object_set (lpbin->uridecodebin, "caps", fd_caps, "uri", lpbin->uri,
+      /* configure buffering parameters */
+      "buffer-duration", lpbin->buffer_duration,
+      "buffer-size", lpbin->buffer_size, NULL);
 
   if (lpbin->use_buffering)
     g_object_set (lpbin->uridecodebin, "use-buffering", TRUE, NULL);

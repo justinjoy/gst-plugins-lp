@@ -56,6 +56,9 @@ struct _GstLpBin
   GstElement *source;
   GstFlowReturn ret;
 
+  guint64 buffer_duration;      /* When buffering, the max buffer duration (ns) */
+  guint buffer_size;            /* When buffering, the max buffer size (bytes) */
+
   GstBus *bus;
 
   gchar *uri;
