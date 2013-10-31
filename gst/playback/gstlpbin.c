@@ -1217,9 +1217,10 @@ notify_source_cb (GstElement * decodebin, GParamSpec * pspec, GstLpBin * lpbin)
 
   g_object_get (lpbin->uridecodebin, "source", &source, NULL);
 
-  GST_OBJECT_LOCK (lpbin);
   if (lpbin->property_pairs)
     gst_lp_bin_do_property_set (lpbin, source);
+
+  GST_OBJECT_LOCK (lpbin);
   if ((lpbin->source != NULL) && (GST_IS_ELEMENT (lpbin->source))) {
     gst_object_unref (GST_OBJECT (lpbin->source));
   }
