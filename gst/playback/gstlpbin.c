@@ -620,9 +620,11 @@ gst_lp_bin_init (GstLpBin * lpbin)
   /* first filter out the interesting element factories */
   g_mutex_init (&lpbin->elements_lock);
 
+  /* add sink */
+  lpbin->lpsink = g_object_new (GST_TYPE_LP_SINK, NULL);
+  gst_bin_add (GST_BIN_CAST (lpbin), GST_ELEMENT_CAST (lpbin->lpsink));
   lpbin->uridecodebin = NULL;
   lpbin->fcbin = NULL;
-  lpbin->lpsink = NULL;
   lpbin->source = NULL;
 
   lpbin->naudio = 0;
@@ -1359,7 +1361,6 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
       g_signal_connect (lpbin->fcbin, "video-tags-changed",
       G_CALLBACK (video_tags_changed_cb), lpbin);
 
-  lpbin->lpsink = gst_element_factory_make ("lpsink", NULL);
   if (lpbin->lpsink && lpbin->thumbnail_mode) {
     GST_DEBUG_OBJECT (lpbin,
         "setup_element : set lpsink thumbnail-mode as TRUE");
@@ -1378,7 +1379,6 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
 
   g_object_set (lpbin->lpsink, "audio-resource", lpbin->audio_resource, NULL);
 
-  gst_bin_add (GST_BIN_CAST (lpbin), lpbin->lpsink);
 
   g_object_unref (fd_caps);
 
