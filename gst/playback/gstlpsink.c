@@ -779,6 +779,9 @@ gst_lp_sink_get_property (GObject * object, guint prop_id,
       g_value_take_object (value, gst_lp_sink_get_sink (lpsink,
               GST_LP_SINK_TYPE_AUDIO));
       break;
+    case PROP_AUDIO_ONLY:
+      g_value_set_boolean (value, lpsink->audio_only);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, spec);
       break;
