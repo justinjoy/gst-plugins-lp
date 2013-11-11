@@ -59,6 +59,7 @@ enum
 {
   SIGNAL_VIDEO_TAGS_CHANGED,
   SIGNAL_AUDIO_TAGS_CHANGED,
+  SIGNAL_TEXT_TAGS_CHANGED,
   SIGNAL_ELEMENT_CONFIGURED,
   LAST_SIGNAL
 };
@@ -80,6 +81,8 @@ static void gst_fc_bin_get_property (GObject * object, guint prop_id,
 static GstPad *gst_fc_bin_request_new_pad (GstElement * element,
     GstPadTemplate * templ, const gchar * name, const GstCaps * caps);
 static gboolean array_has_value (const gchar * values[], const gchar * value);
+static gboolean gst_fc_bin_funnel_pad_event (GstPad * pad, GstObject * parent,
+    GstEvent * event);
 /*static GstStateChangeReturn gst_fc_bin_change_state (GstElement * element,
     GstStateChange transition);*/
 
@@ -251,6 +254,25 @@ gst_fc_bin_class_init (GstFCBinClass * klass)
       g_cclosure_marshal_generic, G_TYPE_NONE, 1, G_TYPE_INT);
 
   /**
+   * GstFCBin::text-tags-changed
+   * @fcbin: a #GstFCBin
+   * @stream: stream index with changed tags
+   *
+   * This signal is emitted whenever the tags of an audio stream have changed.
+   * The application will most likely want to get the new tags.
+   *
+   * This signal may be emitted from the context of a GStreamer streaming thread.
+   * You can use gst_message_new_application() and gst_element_post_message()
+   * to notify your application's main thread.
+   *
+   */
+  gst_fc_bin_signals[SIGNAL_TEXT_TAGS_CHANGED] =
+      g_signal_new ("text-tags-changed", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST,
+      G_STRUCT_OFFSET (GstFCBinClass, text_tags_changed), NULL, NULL,
+      g_cclosure_marshal_generic, G_TYPE_NONE, 1, G_TYPE_INT);
+
+  /**
    * GstFCBin::element-configured
    * @fcbin: a #GstFCBin
    *
@@ -261,7 +283,8 @@ gst_fc_bin_class_init (GstFCBinClass * klass)
       g_signal_new ("element-configured", G_TYPE_FROM_CLASS (klass),
       G_SIGNAL_RUN_LAST,
       G_STRUCT_OFFSET (GstFCBinClass, element_configured), NULL, NULL,
-      g_cclosure_marshal_generic, G_TYPE_NONE, 2, G_TYPE_INT, GST_TYPE_PAD);
+      g_cclosure_marshal_generic, G_TYPE_NONE, 3, G_TYPE_INT, GST_TYPE_PAD,
+      GST_TYPE_PAD);
 
   //element_class->change_state = GST_DEBUG_FUNCPTR (gst_fc_bin_change_state);
   element_class->request_new_pad =
@@ -618,6 +641,40 @@ notify_tags_cb (GObject * object, GParamSpec * pspec, gpointer user_data)
   }
 }
 
+static gboolean
+gst_fc_bin_funnel_pad_event (GstPad * pad, GstObject * parent, GstEvent * event)
+{
+  gboolean res;
+
+  switch (GST_EVENT_TYPE (event)) {
+    case GST_EVENT_TAG:
+    {
+      GstTagList *tags, *oldtags, *newtags;
+      NotifyTagsData *ntdata;
+
+      gst_event_parse_tag (event, &tags);
+      oldtags = g_object_get_data (G_OBJECT (pad), "funnel.taglist");
+      newtags = gst_tag_list_merge (oldtags, tags, GST_TAG_MERGE_REPLACE);
+
+      g_object_set_data (G_OBJECT (pad), "funnel.taglist", newtags);
+
+      ntdata = g_object_get_data (G_OBJECT (pad), "funnel.tagdata");
+      g_signal_emit (G_OBJECT (ntdata->fcbin),
+          gst_fc_bin_signals[SIGNAL_TEXT_TAGS_CHANGED], 0, ntdata->stream_id);
+
+      if (oldtags)
+        gst_tag_list_unref (oldtags);
+      GST_DEBUG_OBJECT (pad, "received tags %" GST_PTR_FORMAT, newtags);
+    }
+      break;
+    default:
+      res = gst_pad_event_default (pad, parent, event);
+      break;
+  }
+
+  return res;
+}
+
 static void
 gst_fc_bin_do_configure (GstFCBin * fcbin, GstPad * ghost_sinkpad,
     GstLpSinkType type, gboolean multiple_stream)
@@ -676,15 +733,21 @@ gst_fc_bin_do_configure (GstFCBin * fcbin, GstPad * ghost_sinkpad,
     if ((sinkpad = gst_element_get_request_pad (select->selector, pad_name))) {
       g_object_set_data (G_OBJECT (sinkpad), "fcbin.select", select);
 
+      gulong notify_tags_handler = 0;
+      NotifyTagsData *ntdata;
+
+      ntdata = g_new0 (NotifyTagsData, 1);
+      ntdata->fcbin = fcbin;
+      ntdata->stream_id = select->channels->len;
+      ntdata->type = type;
+
+      if (multiple_stream) {
+        gst_pad_set_event_function (sinkpad,
+            GST_DEBUG_FUNCPTR (gst_fc_bin_funnel_pad_event));
+        g_object_set_data (G_OBJECT (sinkpad), "funnel.tagdata", ntdata);
+      }
+
       if (g_object_class_find_property (G_OBJECT_GET_CLASS (sinkpad), "tags")) {
-        gulong notify_tags_handler = 0;
-        NotifyTagsData *ntdata;
-
-        ntdata = g_new0 (NotifyTagsData, 1);
-        ntdata->fcbin = fcbin;
-        ntdata->stream_id = select->channels->len;
-        ntdata->type = type;
-
         notify_tags_handler =
             g_signal_connect_data (G_OBJECT (sinkpad), "notify::tags",
             G_CALLBACK (notify_tags_cb), ntdata, (GClosureNotify) g_free,
@@ -698,7 +761,7 @@ gst_fc_bin_do_configure (GstFCBin * fcbin, GstPad * ghost_sinkpad,
           select->srcpad);
 
       g_signal_emit (G_OBJECT (fcbin),
-          gst_fc_bin_signals[SIGNAL_ELEMENT_CONFIGURED], 0, type,
+          gst_fc_bin_signals[SIGNAL_ELEMENT_CONFIGURED], 0, type, sinkpad,
           select->srcpad);
 
       g_ptr_array_add (select->channels, sinkpad);

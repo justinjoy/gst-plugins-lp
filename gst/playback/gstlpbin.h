@@ -74,6 +74,7 @@ struct _GstLpBin
   gulong caps_video_id;
   gulong audio_tags_changed_id;
   gulong video_tags_changed_id;
+  gulong text_tags_changed_id;
 
   guint naudio;
   guint nvideo;
@@ -104,8 +105,14 @@ struct _GstLpBin
 
   GPtrArray *video_channels;    /* links to input-selector pads */
   GPtrArray *audio_channels;    /* links to input-selector pads */
+  GPtrArray *text_channels;     /* links to input-selector pads */
 
   gboolean audio_only;          /* Whether or not audio and video stream exist */
+
+  /* Whether or not audio, video and text chain is linked */
+  gboolean *audio_chain_linked;
+  gboolean *video_chain_linked;
+  gboolean *text_chain_linked;
 };
 
 struct _GstLpBinClass
@@ -128,17 +135,20 @@ struct _GstLpBinClass
   GstBuffer *(*retrieve_thumbnail) (GstLpBin * lpbin, gint width, gint height,
       gchar * format);
 
-  /* notify app that the tags of audio/video streams changed */
+  /* notify app that the tags of audio/video/text streams changed */
   void (*video_tags_changed) (GstLpBin * lpbin, gint stream);
   void (*audio_tags_changed) (GstLpBin * lpbin, gint stream);
+  void (*text_tags_changed) (GstLpBin * lpbin, gint stream);
 
-  /* get audio/video tags for a stream */
+  /* get audio/video/text tags for a stream */
   GstTagList *(*get_video_tags) (GstLpBin * lpbin, gint stream);
   GstTagList *(*get_audio_tags) (GstLpBin * lpbin, gint stream);
+  GstTagList *(*get_text_tags) (GstLpBin * lpbin, gint stream);
 
   /* get audio/video pad for a stream */
   GstPad *(*get_video_pad) (GstLpBin * lpbin, gint stream);
   GstPad *(*get_audio_pad) (GstLpBin * lpbin, gint stream);
+  GstPad *(*get_text_pad) (GstLpBin * lpbin, gint stream);
 
   /* get the caps of video sink element's sinkpad */
   GstStructure *(*caps_video) (GstLpBin * lpbin);

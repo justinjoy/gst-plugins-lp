@@ -63,10 +63,13 @@ enum
   SIGNAL_CAPS_VIDEO,
   SIGNAL_VIDEO_TAGS_CHANGED,
   SIGNAL_AUDIO_TAGS_CHANGED,
+  SIGNAL_TEXT_TAGS_CHANGED,
   SIGNAL_GET_VIDEO_TAGS,
   SIGNAL_GET_AUDIO_TAGS,
+  SIGNAL_GET_TEXT_TAGS,
   SIGNAL_GET_VIDEO_PAD,
   SIGNAL_GET_AUDIO_PAD,
+  SIGNAL_GET_TEXT_PAD,
   LAST_SIGNAL
 };
 
@@ -108,8 +111,10 @@ static void audio_tags_changed_cb (GstElement * fcbin,
     gint stream_id, GstLpBin * lpbin);
 static void video_tags_changed_cb (GstElement * fcbin,
     gint stream_id, GstLpBin * lpbin);
+static void text_tags_changed_cb (GstElement * fcbin,
+    gint stream_id, GstLpBin * lpbin);
 static void element_configured_cb (GstElement * fcbin,
-    gint type, GstPad * pad, GstLpBin * lpbin);
+    gint type, GstPad * sinkpad, GstPad * srcpad, GstLpBin * lpbin);
 
 /* private functions */
 static gboolean gst_lp_bin_setup_element (GstLpBin * lpbin);
@@ -142,8 +147,10 @@ static void gst_lp_bin_do_property_set (GstLpBin * lpbin, GstElement * element);
 
 static GstTagList *gst_lp_bin_get_video_tags (GstLpBin * lpbin, gint stream);
 static GstTagList *gst_lp_bin_get_audio_tags (GstLpBin * lpbin, gint stream);
+static GstTagList *gst_lp_bin_get_text_tags (GstLpBin * lpbin, gint stream);
 static GstPad *gst_lp_bin_get_video_pad (GstLpBin * lpbin, gint stream);
 static GstPad *gst_lp_bin_get_audio_pad (GstLpBin * lpbin, gint stream);
+static GstPad *gst_lp_bin_get_text_pad (GstLpBin * lpbin, gint stream);
 static gboolean gst_lp_bin_get_buffering_query (GstQuery * query,
     GstElement * element, gint * percent, gint64 * start, gint64 * stop);
 static gboolean gst_lp_bin_find_queue (GstQuery * query, gchar * elem_name,
@@ -409,6 +416,25 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
       g_cclosure_marshal_generic, G_TYPE_NONE, 1, G_TYPE_INT);
 
   /**
+   * GstLpBin::text-tags-changed
+   * @lpbin: a #GstLpBin
+   * @stream: stream index with changed tags
+   *
+   * This signal is emitted whenever the tags of a video stream have changed.
+   * The application will most likely want to get the new tags.
+   *
+   * This signal may be emitted from the context of a GStreamer streaming thread.
+   * You can use gst_message_new_application() and gst_element_post_message()
+   * to notify your application's main thread.
+   *
+   */
+  gst_lp_bin_signals[SIGNAL_TEXT_TAGS_CHANGED] =
+      g_signal_new ("text-tags-changed", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST,
+      G_STRUCT_OFFSET (GstLpBinClass, text_tags_changed), NULL, NULL,
+      g_cclosure_marshal_generic, G_TYPE_NONE, 1, G_TYPE_INT);
+
+  /**
    * GstLpBin::get-video-tags
    * @lpbin: a #GstLpBin
    * @stream: a video stream number
@@ -441,6 +467,24 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
       G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
       G_STRUCT_OFFSET (GstLpBinClass, get_audio_tags), NULL, NULL,
       g_cclosure_marshal_generic, GST_TYPE_TAG_LIST, 1, G_TYPE_INT);
+
+  /**
+   * GstLpBin::get-text-tags
+   * @lpbin: a #GstLpBin
+   * @stream: a text stream number
+   *
+   * Action signal to retrieve the tags of a specific text stream number.
+   * This information can be used to select a stream.
+   *
+   * Returns: a GstTagList with tags or NULL when the stream number does not
+   * exist.
+   */
+  gst_lp_bin_signals[SIGNAL_GET_TEXT_TAGS] =
+      g_signal_new ("get-text-tags", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
+      G_STRUCT_OFFSET (GstLpBinClass, get_text_tags), NULL, NULL,
+      g_cclosure_marshal_generic, GST_TYPE_TAG_LIST, 1, G_TYPE_INT);
+
 
   /**
    * GstLpBin::get-video-pad
@@ -478,6 +522,24 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
       G_STRUCT_OFFSET (GstLpBinClass, get_audio_pad), NULL, NULL,
       g_cclosure_marshal_generic, GST_TYPE_PAD, 1, G_TYPE_INT);
 
+  /**
+   * GstLpBin::get-text-pad
+   * @lpbin: a #GstLpBin
+   * @stream: a text stream number
+   *
+   * Action signal to retrieve the stream-combiner sinkpad for a specific
+   * text stream.
+   * This pad can be used for notifications of caps changes, stream-specific
+   * queries, etc.
+   *
+   * Returns: a #GstPad, or NULL when the stream number does not exist.
+   */
+  gst_lp_bin_signals[SIGNAL_GET_TEXT_PAD] =
+      g_signal_new ("get-text-pad", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
+      G_STRUCT_OFFSET (GstLpBinClass, get_audio_pad), NULL, NULL,
+      g_cclosure_marshal_generic, GST_TYPE_PAD, 1, G_TYPE_INT);
+
   gstelement_klass->change_state = GST_DEBUG_FUNCPTR (gst_lp_bin_change_state);
   gstelement_klass->query = GST_DEBUG_FUNCPTR (gst_lp_bin_query);
 
@@ -489,8 +551,10 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
   klass->caps_video = GST_DEBUG_FUNCPTR (gst_lp_bin_caps_video);
   klass->get_video_tags = gst_lp_bin_get_video_tags;
   klass->get_audio_tags = gst_lp_bin_get_audio_tags;
+  klass->get_text_tags = gst_lp_bin_get_text_tags;
   klass->get_video_pad = gst_lp_bin_get_video_pad;
   klass->get_audio_pad = gst_lp_bin_get_audio_pad;
+  klass->get_text_pad = gst_lp_bin_get_text_pad;
 }
 
 static gboolean
@@ -616,6 +680,7 @@ gst_lp_bin_init (GstLpBin * lpbin)
 
   lpbin->video_channels = g_ptr_array_new ();
   lpbin->audio_channels = g_ptr_array_new ();
+  lpbin->text_channels = g_ptr_array_new ();
 
   g_rec_mutex_init (&lpbin->lock);
 
@@ -651,6 +716,10 @@ gst_lp_bin_init (GstLpBin * lpbin)
   lpbin->buffer_size = DEFAULT_BUFFER_SIZE;
 
   lpbin->audio_only = TRUE;
+
+  lpbin->audio_chain_linked = FALSE;
+  lpbin->video_chain_linked = FALSE;
+  lpbin->text_chain_linked = FALSE;
 }
 
 static void
@@ -662,6 +731,7 @@ gst_lp_bin_finalize (GObject * obj)
 
   g_ptr_array_free (lpbin->video_channels, TRUE);
   g_ptr_array_free (lpbin->audio_channels, TRUE);
+  g_ptr_array_free (lpbin->text_channels, TRUE);
 
   if (lpbin->source)
     gst_object_unref (lpbin->source);
@@ -1169,24 +1239,11 @@ pad_added_cb (GstElement * decodebin, GstPad * pad, GstLpBin * lpbin)
 
   fcbin_srcpad = g_object_get_data (G_OBJECT (fcbin_sinkpad), "fcbin.srcpad");
 
-  if (g_str_has_prefix (name, "video/")) {
+  if (!lpbin->video_pad && g_str_has_prefix (name, "video/")) {
     lpbin->audio_only = FALSE;
-    if (!lpbin->video_pad)
-      lpbin->video_pad = fcbin_srcpad;
-    /* store the pad in the array */
-    sinkpad = gst_ghost_pad_get_target (GST_GHOST_PAD (fcbin_sinkpad));
-    if (sinkpad) {
-      GST_DEBUG_OBJECT (lpbin, "pad %p added to array", sinkpad);
-      g_ptr_array_add (lpbin->video_channels, sinkpad);
-    }
-  } else if (g_str_has_prefix (name, "audio/")) {
-    if (!lpbin->audio_pad)
-      lpbin->audio_pad = fcbin_srcpad;
-    sinkpad = gst_ghost_pad_get_target (GST_GHOST_PAD (fcbin_sinkpad));
-    if (sinkpad) {
-      GST_DEBUG_OBJECT (lpbin, "pad %p added to array", sinkpad);
-      g_ptr_array_add (lpbin->audio_channels, sinkpad);
-    }
+    lpbin->video_pad = fcbin_srcpad;
+  } else if (!lpbin->audio_pad && g_str_has_prefix (name, "audio/")) {
+    lpbin->audio_pad = fcbin_srcpad;
   } else if (!lpbin->text_pad && g_str_has_prefix (name, "text/")
       || g_str_has_prefix (name, "application/")
       || g_str_has_prefix (name, "subpicture/")) {
@@ -1220,26 +1277,37 @@ no_more_pads_cb (GstElement * decodebin, GstLpBin * lpbin)
 }
 
 static void
-element_configured_cb (GstElement * fcbin, gint type, GstPad * pad,
-    GstLpBin * lpbin)
+element_configured_cb (GstElement * fcbin, gint type, GstPad * sinkpad,
+    GstPad * srcpad, GstLpBin * lpbin)
 {
   GstPad *lpsink_sinkpad = NULL;
 
-  if (gst_pad_is_linked (pad)) {
-    GST_DEBUG_OBJECT (lpbin, "element_configured_cb : [%s:%d] already linked",
-        GST_DEBUG_PAD_NAME (pad), type);
-    return;
-  }
-
   if (type == GST_LP_SINK_TYPE_AUDIO) {
-    lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, "audio_sink");
-    gst_pad_link (pad, lpsink_sinkpad);
+    GST_INFO_OBJECT (lpbin, "element_configured_cb : AUDIO");
+    g_ptr_array_add (lpbin->audio_channels, sinkpad);
+    if (!lpbin->audio_chain_linked) {
+      lpbin->audio_chain_linked = TRUE;
+      lpsink_sinkpad =
+          gst_element_get_request_pad (lpbin->lpsink, "audio_sink");
+      gst_pad_link (srcpad, lpsink_sinkpad);
+    }
   } else if (type == GST_LP_SINK_TYPE_VIDEO) {
-    lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, "video_sink");
-    gst_pad_link (pad, lpsink_sinkpad);
+    GST_INFO_OBJECT (lpbin, "element_configured_cb : VIDEO");
+    g_ptr_array_add (lpbin->video_channels, sinkpad);
+    if (!lpbin->video_chain_linked) {
+      lpbin->video_chain_linked = TRUE;
+      lpsink_sinkpad =
+          gst_element_get_request_pad (lpbin->lpsink, "video_sink");
+      gst_pad_link (srcpad, lpsink_sinkpad);
+    }
   } else if (type == GST_LP_SINK_TYPE_TEXT) {
-    lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, "text_sink");
-    gst_pad_link (lpbin->text_pad, lpsink_sinkpad);
+    GST_INFO_OBJECT (lpbin, "element_configured_cb : TEXT");
+    g_ptr_array_add (lpbin->text_channels, sinkpad);
+    if (!lpbin->text_chain_linked) {
+      lpbin->text_chain_linked = TRUE;
+      lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, "text_sink");
+      gst_pad_link (srcpad, lpsink_sinkpad);
+    }
   }
 }
 
@@ -1358,6 +1426,10 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
       g_signal_connect (lpbin->fcbin, "video-tags-changed",
       G_CALLBACK (video_tags_changed_cb), lpbin);
 
+  lpbin->text_tags_changed_id =
+      g_signal_connect (lpbin->fcbin, "text-tags-changed",
+      G_CALLBACK (text_tags_changed_cb), lpbin);
+
   g_signal_connect (lpbin->fcbin, "element-configured",
       G_CALLBACK (element_configured_cb), lpbin);
 
@@ -1450,6 +1522,7 @@ gst_lp_bin_deactive (GstLpBin * lpbin)
   REMOVE_SIGNAL (lpbin, lpbin->caps_video_id);
   REMOVE_SIGNAL (lpbin, lpbin->audio_tags_changed_id);
   REMOVE_SIGNAL (lpbin, lpbin->video_tags_changed_id);
+  REMOVE_SIGNAL (lpbin, lpbin->text_tags_changed_id);
   if (lpbin->uridecodebin) {
     gst_element_set_state (lpbin->uridecodebin, GST_STATE_NULL);
     gst_bin_remove (GST_BIN_CAST (lpbin), lpbin->uridecodebin);
@@ -1989,6 +2062,15 @@ video_tags_changed_cb (GstElement * fcbin, gint stream_id, GstLpBin * lpbin)
       gst_lp_bin_signals[SIGNAL_VIDEO_TAGS_CHANGED], 0, stream_id);
 }
 
+static void
+text_tags_changed_cb (GstElement * fcbin, gint stream_id, GstLpBin * lpbin)
+{
+  GST_DEBUG_OBJECT (lpbin, "text_tags_changed_cb : stream_id = %d", stream_id);
+
+  g_signal_emit (G_OBJECT (lpbin),
+      gst_lp_bin_signals[SIGNAL_TEXT_TAGS_CHANGED], 0, stream_id);
+}
+
 static GstTagList *
 get_tags (GstLpBin * lpbin, gint type, gint stream)
 {
@@ -2002,6 +2084,9 @@ get_tags (GstLpBin * lpbin, gint type, gint stream)
       break;
     case LPBIN_STREAM_VIDEO:
       channels = lpbin->video_channels;
+      break;
+    case LPBIN_STREAM_TEXT:
+      channels = lpbin->text_channels;
       break;
     default:
       channels = NULL;
@@ -2018,6 +2103,10 @@ get_tags (GstLpBin * lpbin, gint type, gint stream)
     GST_DEBUG_OBJECT (lpbin, "get_tags : %s has tags property",
         gst_pad_get_name (sinkpad));
     g_object_get (sinkpad, "tags", &result, NULL);
+  } else {
+    GST_DEBUG_OBJECT (lpbin, "get_tags : there is a taglist in funnel : %s",
+        gst_pad_get_name (sinkpad));
+    result = g_object_get_data (G_OBJECT (sinkpad), "funnel.taglist");
   }
   GST_DEBUG_OBJECT (lpbin, "get_tags : result = %p", result);
   return result;
@@ -2047,6 +2136,18 @@ gst_lp_bin_get_audio_tags (GstLpBin * lpbin, gint stream)
   return result;
 }
 
+static GstTagList *
+gst_lp_bin_get_text_tags (GstLpBin * lpbin, gint stream)
+{
+  GstTagList *result;
+
+  GST_LP_BIN_LOCK (lpbin);
+  result = get_tags (lpbin, LPBIN_STREAM_TEXT, stream);
+  GST_LP_BIN_UNLOCK (lpbin);
+
+  return result;
+}
+
 static GstPad *
 gst_lp_bin_get_video_pad (GstLpBin * lpbin, gint stream)
 {
@@ -2070,6 +2171,21 @@ gst_lp_bin_get_audio_pad (GstLpBin * lpbin, gint stream)
   GST_LP_BIN_LOCK (lpbin);
   if (stream < lpbin->audio_channels->len) {
     sinkpad = g_ptr_array_index (lpbin->audio_channels, stream);
+    gst_object_ref (sinkpad);
+  }
+  GST_LP_BIN_UNLOCK (lpbin);
+
+  return sinkpad;
+}
+
+static GstPad *
+gst_lp_bin_get_text_pad (GstLpBin * lpbin, gint stream)
+{
+  GstPad *sinkpad = NULL;
+
+  GST_LP_BIN_LOCK (lpbin);
+  if (stream < lpbin->text_channels->len) {
+    sinkpad = g_ptr_array_index (lpbin->text_channels, stream);
     gst_object_ref (sinkpad);
   }
   GST_LP_BIN_UNLOCK (lpbin);
