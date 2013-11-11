@@ -29,6 +29,13 @@
 GST_DEBUG_CATEGORY_STATIC (gst_lp_bin_debug);
 #define GST_CAT_DEFAULT gst_lp_bin_debug
 
+#define LPBIN_SUPPORTED_CAPS "\
+video/x-fd; audio/x-fd; \
+text/x-avi-internal; text/x-avi-unknown; text/x-raw; \
+application/x-ass; application/x-ssa; \
+subpicture/x-dvd; subpicture/x-dvb; subpicture/x-xsub; \
+"
+
 enum
 {
   PROP_0,
@@ -1363,15 +1370,14 @@ gst_lp_bin_set_thumbnail_mode (GstLpBin * lpbin, gboolean thumbnail_mode)
   gst_lp_sink_set_thumbnail_mode (lpbin->lpsink, thumbnail_mode);
 }
 
+
 static gboolean
 gst_lp_bin_setup_element (GstLpBin * lpbin)
 {
   GstCaps *fd_caps;
 
   /* FIXME: Using fixed value caps is not a good idea. */
-  fd_caps =
-      gst_caps_from_string
-      ("video/x-fd; audio/x-fd; text/x-avi-internal; text/x-avi-unknown; text/x-raw; application/x-ass; application/x-ssa; subpicture/x-dvd; subpicture/x-dvb;");
+  fd_caps = gst_caps_from_string (LPBIN_SUPPORTED_CAPS);
 
   lpbin->uridecodebin = gst_element_factory_make ("uridecodebin", NULL);
 
