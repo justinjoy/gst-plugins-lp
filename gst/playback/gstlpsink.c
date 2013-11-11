@@ -487,9 +487,7 @@ gen_video_chain (GstLpSink * lpsink)
       "max-size-bytes", 0, "max-size-time", (gint64) 0, "silent", TRUE, NULL);
   gst_bin_add (bin, chain->queue);
 
-  queue_srcpad = gst_element_get_static_pad (chain->queue, "src");
-  sink_sinkpad = gst_element_get_request_pad (chain->sink, "sink_%d");
-  gst_pad_link_full (queue_srcpad, sink_sinkpad,
+  gst_element_link_pads_full (chain->queue, "src", chain->sink, NULL,
       GST_PAD_LINK_CHECK_TEMPLATE_CAPS);
 
   queue_sinkpad = gst_element_get_static_pad (chain->queue, "sink");
@@ -500,8 +498,6 @@ gen_video_chain (GstLpSink * lpsink)
       g_list_append (lpsink->sink_chain_list, (GstSinkChain *) chain);
 
   gst_object_unref (queue_sinkpad);
-  gst_object_unref (queue_srcpad);
-  gst_object_unref (sink_sinkpad);
 
   GST_LP_SINK_UNLOCK (lpsink);
   return chain;
