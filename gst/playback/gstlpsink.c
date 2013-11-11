@@ -815,22 +815,24 @@ gst_lp_sink_send_event_to_sink (GstLpSink * lpsink, GstEvent * event)
 {
   gboolean res = TRUE;
 
-  if (lpsink->sink_chain_list) {
-    GList *walk = lpsink->sink_chain_list;
-
-    while (walk) {
-      GstSinkChain *chain = (GstSinkChain *) walk->data;
-      if (chain->sink) {
-        gst_event_ref (event);
-        if ((res = gst_element_send_event (chain->sink, event)))
-          GST_DEBUG_OBJECT (lpsink, "Sent event successfully to sink");
-        else
-          GST_DEBUG_OBJECT (lpsink, "Event failed when sent to sink");
-      }
-      walk = g_list_next (walk);
+  if (lpsink->video_sink) {
+    gst_event_ref (event);
+    if ((res = gst_element_send_event (lpsink->video_sink, event))) {
+      GST_DEBUG_OBJECT (lpsink, "Sent event successfully to video sink");
+      goto done;
     }
+    GST_DEBUG_OBJECT (lpsink, "Event failed when sent to video sink");
+  }
+  if (lpsink->audio_sink) {
+    gst_event_ref (event);
+    if ((res = gst_element_send_event (lpsink->audio_sink, event))) {
+      GST_DEBUG_OBJECT (lpsink, "Sent event successfully to audio sink");
+      goto done;
+    }
+    GST_DEBUG_OBJECT (lpsink, "Event failed when sent to audio sink");
   }
 
+done:
   gst_event_unref (event);
   return res;
 }
