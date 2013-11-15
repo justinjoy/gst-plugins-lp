@@ -468,6 +468,15 @@ gen_video_chain (GstLpSink * lpsink)
   chain->lpsink = lpsink;
 
   sink_element = gst_element_factory_make ("vdecsink", NULL);
+
+  if (lpsink->thumbnail_mode
+      && g_object_class_find_property (G_OBJECT_GET_CLASS (sink_element),
+          "thumbnail-mode")) {
+    GST_INFO_OBJECT (sink_element, "gen_video_chain : thumbnail mode set as %d",
+        lpsink->thumbnail_mode);
+    g_object_set (sink_element, "thumbnail-mode", lpsink->thumbnail_mode, NULL);
+  }
+
   GST_DEBUG_OBJECT (sink_element,
       "Passing vdec ch property[%x] into vdecsink", lpsink->video_resource);
   g_object_set (sink_element, "vdec-ch", lpsink->video_resource, NULL);
