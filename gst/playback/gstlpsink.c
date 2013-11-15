@@ -54,12 +54,25 @@ enum
   PROP_VIDEO_RESOURCE,
   PROP_AUDIO_RESOURCE,
   PROP_AUDIO_ONLY,
-  PROP_AVSINK,
+  PROP_ENABLE_AVSINK,
   PROP_LAST
 };
 
 #define DEFAULT_THUMBNAIL_MODE FALSE
-#define DEFAULT_AVSINK FALSE
+#define DEFAULT_ENABLE_AVSINK TRUE
+
+#define PENDING_FLAG_SET(lpsink, flagtype) \
+  ((lpsink->pending_blocked_pads) |= ( 1 << flagtype))
+#define PENDING_FLAG_UNSET(lpsink, flagtype) \
+  ((lpsink->pending_blocked_pads) &= ~( 1 << flagtype))
+#define PENDING_FLAG_IS_SET(lpsink, flagtype) \
+  ((lpsink->pending_blocked_pads) & ( 1 << flagtype))
+#define PENDING_VIDEO_BLOCK(lpsink) \
+  PENDING_FLAG_IS_SET(lpsink, GST_LP_SINK_TYPE_VIDEO)
+#define PENDING_AUDIO_BLOCK(lpsink) \
+  PENDING_FLAG_IS_SET(lpsink, GST_LP_SINK_TYPE_AUDIO)
+#define PENDING_TEXT_BLOCK(lpsink) \
+  PENDING_FLAG_IS_SET(lpsink, GST_LP_SINK_TYPE_TEXT)
 
 static void gst_lp_sink_dispose (GObject * object);
 static void gst_lp_sink_finalize (GObject * object);
@@ -83,8 +96,7 @@ static void gst_lp_sink_handle_message (GstBin * bin, GstMessage * message);
 void gst_lp_sink_set_sink (GstLpSink * lpsink, GstLpSinkType type,
     GstElement * sink);
 GstElement *gst_lp_sink_get_sink (GstLpSink * lpsink, GstLpSinkType type);
-static gboolean gst_lp_sink_do_reconfigure (GstLpSink * lpsink,
-    GstLpSinkType type, GstPad * demux_srcpad);
+static gboolean gst_lp_sink_do_reconfigure (GstLpSink * lpsink);
 static gboolean add_chain (GstSinkChain * chain, gboolean add);
 static gboolean activate_chain (GstSinkChain * chain, gboolean activate);
 
@@ -154,8 +166,8 @@ gst_lp_sink_class_init (GstLpSinkClass * klass)
           "Audio only stream", FALSE,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
-  g_object_class_install_property (gobject_klass, PROP_AVSINK,
-      g_param_spec_boolean ("avsink", "avsink",
+  g_object_class_install_property (gobject_klass, PROP_ENABLE_AVSINK,
+      g_param_spec_boolean ("enable-avsink", "enable avsink",
           "avsink is a single sink that accept both of audio and video", FALSE,
           G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
 
@@ -212,7 +224,7 @@ gst_lp_sink_init (GstLpSink * lpsink)
   lpsink->nb_text_bin = 0;
 
   lpsink->audio_only = FALSE;
-  lpsink->avsink = DEFAULT_AVSINK;
+  lpsink->enable_avsink = DEFAULT_ENABLE_AVSINK;
 }
 
 static void
@@ -390,8 +402,6 @@ gen_audio_chain (GstLpSink * lpsink)
   GstPad *queue_sinkpad = NULL;
   GstElement *sink_element = NULL;
 
-  GST_LP_SINK_LOCK (lpsink);
-
   chain = g_slice_alloc0 (sizeof (GstSinkChain));
   chain->lpsink = lpsink;
 
@@ -444,8 +454,6 @@ gen_audio_chain (GstLpSink * lpsink)
   gst_object_unref (queue_sinkpad);
   gst_element_add_pad (GST_ELEMENT_CAST (chain->bin), chain->bin_ghostpad);
 
-  GST_LP_SINK_UNLOCK (lpsink);
-
   lpsink->sink_chain_list =
       g_list_append (lpsink->sink_chain_list, (GstSinkChain *) chain);
 
@@ -469,8 +477,6 @@ gen_video_chain (GstLpSink * lpsink)
   GstPad *queue_srcpad = NULL;
   GstPad *sink_sinkpad = NULL;
   GstElement *sink_element = NULL;
-
-  GST_LP_SINK_LOCK (lpsink);
 
   chain = g_slice_alloc0 (sizeof (GstSinkChain));
   chain->lpsink = lpsink;
@@ -514,7 +520,9 @@ gen_video_chain (GstLpSink * lpsink)
       "max-size-bytes", 0, "max-size-time", (gint64) 0, "silent", TRUE, NULL);
   gst_bin_add (bin, chain->queue);
 
-  gst_element_link_pads_full (chain->queue, "src", chain->sink, NULL,
+  queue_srcpad = gst_element_get_static_pad (chain->queue, "src");
+  sink_sinkpad = gst_element_get_request_pad (chain->sink, "sink_%d");
+  gst_pad_link_full (queue_srcpad, sink_sinkpad,
       GST_PAD_LINK_CHECK_TEMPLATE_CAPS);
 
   queue_sinkpad = gst_element_get_static_pad (chain->queue, "sink");
@@ -525,107 +533,140 @@ gen_video_chain (GstLpSink * lpsink)
       g_list_append (lpsink->sink_chain_list, (GstSinkChain *) chain);
 
   gst_object_unref (queue_sinkpad);
+  gst_object_unref (queue_srcpad);
+  gst_object_unref (sink_sinkpad);
 
-  GST_LP_SINK_UNLOCK (lpsink);
   return chain;
 }
 
 static GstAVSinkChain *
-gen_av_chain (GstLpSink * lpsink, GstLpSinkType type)
+gen_av_chain (GstLpSink * lpsink)
 {
   GstAVSinkChain *chain;
-  GstElement *queue = NULL;
-  GstPad *ghost_sinkpad = NULL;
-  GstPad *queue_sinkpad = NULL;
-  GstPad *queue_srcpad = NULL;
-  GstPad *sink_sinkpad = NULL;
+  GstPad *video_queue_sinkpad = NULL;
+  GstPad *video_queue_srcpad = NULL;
+  GstPad *audio_queue_sinkpad = NULL;
+  GstPad *audio_queue_srcpad = NULL;
   GstElement *sink_element = NULL;
 
-  GST_LP_SINK_LOCK (lpsink);
+  chain = g_slice_alloc0 (sizeof (GstAVSinkChain));
+  chain->sinkchain.type = GST_LP_SINK_TYPE_AV;
+  chain->sinkchain.lpsink = lpsink;
 
-  if (g_list_length (lpsink->sink_chain_list) == 0) {
-    chain = g_slice_alloc0 (sizeof (GstAVSinkChain));
-    chain->sinkchain.type = GST_LP_SINK_TYPE_AV;
-    chain->sinkchain.lpsink = lpsink;
+  sink_element = gst_element_factory_make ("vdecsink", NULL);
+  /* TODO: need to be set property on vdecsink related resource.
+     e.g. g_object_set (sink_element, "vdec-ch", lpsink->video_resource, NULL); */
+  chain->sinkchain.sink = try_element (lpsink, sink_element, TRUE);
 
-    sink_element = gst_element_factory_make ("vdecsink", NULL);
-    /* TODO: need to be set property on vdecsink related resource.
-       e.g. g_object_set (sink_element, "vdec-ch", lpsink->video_resource, NULL); */
-    chain->sinkchain.sink = try_element (lpsink, sink_element, TRUE);
+  if (chain->sinkchain.sink)
+    lpsink->video_sink = gst_object_ref (chain->sinkchain.sink);
 
-    if (chain->sinkchain.sink)
-      lpsink->video_sink = gst_object_ref (chain->sinkchain.sink);
+  chain->sinkchain.bin = gst_bin_new ("vbin");
+  gst_object_ref_sink (chain->sinkchain.bin);
+  gst_bin_add (chain->sinkchain.bin, chain->sinkchain.sink);
 
-    chain->sinkchain.bin = gst_bin_new ("vbin");
-    gst_object_ref_sink (chain->sinkchain.bin);
-    gst_bin_add (chain->sinkchain.bin, chain->sinkchain.sink);
+  lpsink->sink_chain_list =
+      g_list_append (lpsink->sink_chain_list, GST_AV_SINK_CHAIN (chain));
 
-    lpsink->sink_chain_list =
-        g_list_append (lpsink->sink_chain_list, GST_AV_SINK_CHAIN (chain));
-  } else
-    chain = g_list_nth_data (lpsink->sink_chain_list, 0);
+  chain->video_queue = gst_element_factory_make ("queue", NULL);
+  chain->audio_queue = gst_element_factory_make ("queue", NULL);
 
-  queue = gst_element_factory_make ("queue", NULL);
+  g_object_set (G_OBJECT (chain->video_queue), "silent", TRUE, NULL);
+  g_object_set (G_OBJECT (chain->audio_queue), "silent", TRUE, NULL);
+  gst_bin_add (chain->sinkchain.bin, chain->video_queue);
+  gst_bin_add (chain->sinkchain.bin, chain->audio_queue);
 
-  g_object_set (G_OBJECT (queue), "silent", TRUE, NULL);
-  gst_bin_add (chain->sinkchain.bin, queue);
-
-  queue_srcpad = gst_element_get_static_pad (queue, "src");
-  sink_sinkpad = gst_element_get_request_pad (chain->sinkchain.sink, "sink_%d");
-  gst_pad_link_full (queue_srcpad, sink_sinkpad,
+  audio_queue_srcpad = gst_element_get_static_pad (chain->audio_queue, "src");
+  chain->audio_pad =
+      gst_element_get_request_pad (chain->sinkchain.sink, "sink_%d");
+  gst_pad_link_full (audio_queue_srcpad, chain->audio_pad,
       GST_PAD_LINK_CHECK_TEMPLATE_CAPS);
 
-  queue_sinkpad = gst_element_get_static_pad (queue, "sink");
-  ghost_sinkpad = gst_ghost_pad_new (NULL, queue_sinkpad);
+  video_queue_srcpad = gst_element_get_static_pad (chain->video_queue, "src");
+  chain->video_pad =
+      gst_element_get_request_pad (chain->sinkchain.sink, "sink_%d");
+  gst_pad_link_full (video_queue_srcpad, chain->video_pad,
+      GST_PAD_LINK_CHECK_TEMPLATE_CAPS);
 
-  gst_object_unref (queue_sinkpad);
-  gst_object_unref (queue_srcpad);
+  audio_queue_sinkpad = gst_element_get_static_pad (chain->audio_queue, "sink");
+  chain->audio_ghostpad = gst_ghost_pad_new (NULL, audio_queue_sinkpad);
 
-  gst_element_add_pad (GST_ELEMENT_CAST (chain->sinkchain.bin), ghost_sinkpad);
+  video_queue_sinkpad = gst_element_get_static_pad (chain->video_queue, "sink");
+  chain->video_ghostpad = gst_ghost_pad_new (NULL, video_queue_sinkpad);
 
-  if (type == GST_LP_SINK_TYPE_AUDIO) {
-    chain->audio_queue = queue;
-    chain->audio_ghostpad = ghost_sinkpad;
-    chain->audio_pad = sink_sinkpad;
-  } else if (type == GST_LP_SINK_TYPE_VIDEO) {
-    chain->video_queue = queue;
-    chain->video_ghostpad = ghost_sinkpad;
-    chain->video_pad = sink_sinkpad;
-  }
+  gst_object_unref (video_queue_sinkpad);
+  gst_object_unref (video_queue_srcpad);
+  gst_object_unref (audio_queue_sinkpad);
+  gst_object_unref (audio_queue_srcpad);
 
-  if (chain->video_queue && chain->audio_queue) {
-    chain->construct_complete = TRUE;
-  }
+  gst_element_add_pad (GST_ELEMENT_CAST (chain->sinkchain.bin),
+      chain->video_ghostpad);
+  gst_element_add_pad (GST_ELEMENT_CAST (chain->sinkchain.bin),
+      chain->audio_ghostpad);
 
-  GST_LP_SINK_UNLOCK (lpsink);
   return chain;
 }
+
+static GstPadProbeReturn
+sinkpad_blocked_cb (GstPad * blockedpad, GstPadProbeInfo * info,
+    gpointer user_data);
 
 static void
 caps_notify_cb (GstPad * pad, GParamSpec * unused, GstLpSink * lpsink)
 {
   GstElement *element = NULL;
   GstPad *active_pad = NULL;
+  GstPad *demux_sinkpad = NULL;
+  GstPad *peer_pad = NULL;
   GstCaps *caps = NULL;
   gchar *caps_str = NULL;
+  gchar *elem_name = NULL;
+  gboolean reconfigure = FALSE;
+  gulong *block_id = NULL;
 
   g_object_get (pad, "caps", &caps, NULL);
   caps_str = gst_caps_to_string (caps);
   element = gst_pad_get_parent_element (pad);
+  elem_name = gst_pad_get_name (active_pad);
+
   g_object_get (element, "active-src-pad", &active_pad, NULL);
+  //active_pad = gst_element_get_static_pad (element, "src");
+
+  demux_sinkpad = gst_element_get_static_pad (element, "sink");
+  peer_pad = gst_pad_get_peer (demux_sinkpad);
+  gst_object_unref (demux_sinkpad);
 
   GST_DEBUG_OBJECT (lpsink,
       "caps_notify_cb_from_streamiddemux : active srcpad = %s, caps = %s",
-      gst_pad_get_name (active_pad), caps_str);
+      elem_name, caps_str);
 
   if (gst_pad_is_linked (active_pad)) {
     GST_DEBUG_OBJECT (lpsink,
         "caps_notify_cb_from_streamiddemux : active srcpad = %s already linked",
-        gst_pad_get_name (active_pad));
+        elem_name);
     goto done;
   }
 
-  if (g_str_has_prefix (caps_str, "video/")
+  if (peer_pad ==
+      gst_proxy_pad_get_internal (GST_PROXY_PAD (lpsink->audio_pad))) {
+    lpsink->audio_srcpad_demux = active_pad;
+    block_id = &lpsink->audio_block_id;
+  } else if (peer_pad ==
+      gst_proxy_pad_get_internal (GST_PROXY_PAD (lpsink->video_pad))) {
+    lpsink->video_srcpad_demux = active_pad;
+    block_id = &lpsink->video_block_id;
+  } else if (peer_pad ==
+      gst_proxy_pad_get_internal (GST_PROXY_PAD (lpsink->text_pad))) {
+    lpsink->text_srcpad_demux = active_pad;
+    block_id = &lpsink->text_block_id;
+  }
+
+  if ((lpsink->audio_srcpad_demux && lpsink->audiochain) ||
+      (lpsink->video_srcpad_demux && lpsink->videochain) ||
+      (lpsink->text_srcpad_demux && lpsink->textchain))
+    reconfigure = TRUE;
+
+/*  if (g_str_has_prefix (caps_str, "video/")
       || g_str_has_prefix (caps_str, "image/jpeg")) {
     gst_lp_sink_do_reconfigure (lpsink, GST_LP_SINK_TYPE_VIDEO, active_pad);
   } else if (g_str_has_prefix (caps_str, "audio/")) {
@@ -634,86 +675,99 @@ caps_notify_cb (GstPad * pad, GParamSpec * unused, GstLpSink * lpsink)
       || g_str_has_prefix (caps_str, "application/")
       || g_str_has_prefix (caps_str, "subpicture/")) {
     gst_lp_sink_do_reconfigure (lpsink, GST_LP_SINK_TYPE_TEXT, active_pad);
+  }*/
+
+  if (block_id && *block_id == 0) {
+    *block_id =
+        gst_pad_add_probe (active_pad, GST_PAD_PROBE_TYPE_BLOCK_DOWNSTREAM,
+        sinkpad_blocked_cb, lpsink, NULL);
+    //PENDING_FLAG_SET (lpsink, type);
   }
 
 done:
-  if (caps_str)
-    g_free (caps_str);
-  if (caps)
-    gst_caps_unref (caps);
+  g_free (caps_str);
+  gst_caps_unref (caps);
+  g_free (elem_name);
+  gst_object_unref (peer_pad);
+
+  if (reconfigure)
+    gst_lp_sink_reconfigure (lpsink);
 }
 
 static gboolean
-gst_lp_sink_do_reconfigure (GstLpSink * lpsink, GstLpSinkType type,
-    GstPad * demux_srcpad)
+gst_lp_sink_do_reconfigure (GstLpSink * lpsink)
 {
-  GstSinkChain *audiochain;
-  GstSinkChain *videochain;
-  GstAVSinkChain *avchain;
   //GstPad *os_srcpad;
 
-  if (lpsink->avsink && (type == GST_LP_SINK_TYPE_AUDIO
-          || type == GST_LP_SINK_TYPE_VIDEO)) {
-    GstPad *bin_ghostpad = NULL;
-    avchain = gen_av_chain (lpsink, type);
+  GST_LP_SINK_LOCK (lpsink);
 
-    if (avchain->construct_complete == FALSE)
-      add_chain (GST_SINK_CHAIN (&avchain->sinkchain), TRUE);
-    else
-      activate_chain (GST_SINK_CHAIN (&avchain->sinkchain), TRUE);
+  if (lpsink->enable_avsink) {
+    if (!lpsink->avchain)
+      lpsink->avchain = gen_av_chain (lpsink);
+    if (!lpsink->avchain)
+      goto no_chain;
 
-    bin_ghostpad = (type == GST_LP_SINK_TYPE_AUDIO) ?
-        avchain->audio_ghostpad : avchain->video_ghostpad;
+    GST_DEBUG_OBJECT (lpsink, "adding av chain");
+    add_chain (GST_SINK_CHAIN (&lpsink->avchain->sinkchain), TRUE);
+    activate_chain (GST_SINK_CHAIN (&lpsink->avchain->sinkchain), TRUE);
 
-    gst_pad_link_full (demux_srcpad, bin_ghostpad, GST_PAD_LINK_CHECK_NOTHING);
-
-    if (avchain->construct_complete == TRUE)
-      do_async_done (lpsink);
+    gst_pad_link_full (lpsink->video_srcpad_demux,
+        lpsink->avchain->video_ghostpad, GST_PAD_LINK_CHECK_NOTHING);
+    gst_pad_link_full (lpsink->audio_srcpad_demux,
+        lpsink->avchain->audio_ghostpad, GST_PAD_LINK_CHECK_NOTHING);
 
     goto done;
   }
+  //TODO: need to be match with pad block code.
+  /*
+     if (type == GST_LP_SINK_TYPE_AUDIO) {
+     audiochain = gen_audio_chain (lpsink);
 
-  if (type == GST_LP_SINK_TYPE_AUDIO) {
-    audiochain = gen_audio_chain (lpsink);
+     add_chain (GST_SINK_CHAIN (audiochain), TRUE);
+     activate_chain (GST_SINK_CHAIN (audiochain), TRUE);
 
-    add_chain (GST_SINK_CHAIN (audiochain), TRUE);
-    activate_chain (GST_SINK_CHAIN (audiochain), TRUE);
+     gst_pad_link_full (demux_srcpad, audiochain->bin_ghostpad,
+     GST_PAD_LINK_CHECK_NOTHING);
 
-    gst_pad_link_full (demux_srcpad, audiochain->bin_ghostpad,
-        GST_PAD_LINK_CHECK_NOTHING);
+     } else if (type == GST_LP_SINK_TYPE_VIDEO) {
+     videochain = gen_video_chain (lpsink);
 
-  } else if (type == GST_LP_SINK_TYPE_VIDEO) {
-    videochain = gen_video_chain (lpsink);
+     add_chain (GST_SINK_CHAIN (videochain), TRUE);
+     activate_chain (GST_SINK_CHAIN (videochain), TRUE);
 
-    add_chain (GST_SINK_CHAIN (videochain), TRUE);
-    activate_chain (GST_SINK_CHAIN (videochain), TRUE);
+     gst_pad_link_full (demux_srcpad, videochain->bin_ghostpad,
+     GST_PAD_LINK_CHECK_NOTHING);
 
-    gst_pad_link_full (demux_srcpad, videochain->bin_ghostpad,
-        GST_PAD_LINK_CHECK_NOTHING);
+     } else if (type == GST_LP_SINK_TYPE_TEXT) {
+     GstPad *sink_sinkpad;
 
-  } else if (type == GST_LP_SINK_TYPE_TEXT) {
-    GstPad *sink_sinkpad;
+     sink_sinkpad =
+     gst_element_get_request_pad (lpsink->text_sinkbin, "text_sink%d");
 
-    sink_sinkpad =
-        gst_element_get_request_pad (lpsink->text_sinkbin, "text_sink%d");
-
-    if (lpsink->text_streamid_demux) {
-      gst_pad_link_full (demux_srcpad, sink_sinkpad,
-          GST_PAD_LINK_CHECK_NOTHING);
-    }
-  }
-
-  do_async_done (lpsink);
+     if (lpsink->text_streamid_demux) {
+     gst_pad_link_full (demux_srcpad, sink_sinkpad,
+     GST_PAD_LINK_CHECK_NOTHING);
+     }
+     } */
 
 done:
+  do_async_done (lpsink);
+  GST_LP_SINK_UNLOCK (lpsink);
   return TRUE;
+
+no_chain:
+  GST_DEBUG_OBJECT (lpsink, "failed to setup chain");
+  GST_LP_SINK_UNLOCK (lpsink);
+  return FALSE;
 }
 
 static void
 gst_lp_sink_setup_element (GstLpSink * lpsink, GstElement ** streamid_demux,
     GstPad ** ghost_sinkpad, const gchar * pad_name)
 {
-  GstPad *demux_sinkpad;
+  GstPad *demux_sinkpad = NULL;
+  //GstPad *demux_srcpad = NULL;
+  gulong notify_caps_id;
 
   *streamid_demux = gst_element_factory_make ("streamiddemux", NULL);
 
@@ -722,10 +776,140 @@ gst_lp_sink_setup_element (GstLpSink * lpsink, GstElement ** streamid_demux,
 
   demux_sinkpad = gst_element_get_static_pad (*streamid_demux, "sink");
   *ghost_sinkpad = gst_ghost_pad_new (pad_name, demux_sinkpad);
-  g_signal_connect (G_OBJECT (demux_sinkpad), "notify::caps",
+  notify_caps_id =
+      g_signal_connect (G_OBJECT (demux_sinkpad), "notify::caps",
       G_CALLBACK (caps_notify_cb), lpsink);
 
+  //demux_srcpad = gst_element_get_static_pad (*streamid_demux, "src");
+
+  if (*ghost_sinkpad == lpsink->video_pad) {
+    lpsink->video_notify_caps_id = notify_caps_id;
+    lpsink->video_sinkpad_demux = demux_sinkpad;
+    //lpsink->video_srcpad_demux = demux_srcpad;
+  }
+  if (*ghost_sinkpad == lpsink->audio_pad) {
+    lpsink->audio_notify_caps_id = notify_caps_id;
+    lpsink->audio_sinkpad_demux = demux_sinkpad;
+    //lpsink->audio_srcpad_demux = demux_srcpad;
+  }
+  if (*ghost_sinkpad == lpsink->text_pad) {
+    lpsink->text_notify_caps_id = notify_caps_id;
+    lpsink->text_sinkpad_demux = demux_sinkpad;
+    //lpsink->text_srcpad_demux = demux_srcpad;
+  }
+
   gst_object_unref (demux_sinkpad);
+}
+
+static void
+video_set_blocked (GstLpSink * lpsink, gboolean blocked)
+{
+  if (lpsink->video_srcpad_demux) {
+    GstPad *opad = gst_object_ref (lpsink->video_srcpad_demux);
+    if (blocked && lpsink->video_block_id == 0)
+      lpsink->video_block_id =
+          gst_pad_add_probe (opad, GST_PAD_PROBE_TYPE_BLOCK_DOWNSTREAM,
+          sinkpad_blocked_cb, lpsink, NULL);
+    else if (!blocked && lpsink->video_block_id) {
+      gst_pad_remove_probe (opad, lpsink->video_block_id);
+      PENDING_FLAG_UNSET (lpsink, GST_LP_SINK_TYPE_VIDEO);
+      lpsink->video_block_id = 0;
+      lpsink->video_pad_blocked = FALSE;
+    }
+    gst_object_unref (opad);
+  }
+}
+
+static void
+audio_set_blocked (GstLpSink * lpsink, gboolean blocked)
+{
+  if (lpsink->audio_srcpad_demux) {
+    GstPad *opad = gst_object_ref (lpsink->audio_srcpad_demux);
+    if (blocked && lpsink->audio_block_id == 0)
+      lpsink->audio_block_id =
+          gst_pad_add_probe (opad, GST_PAD_PROBE_TYPE_BLOCK_DOWNSTREAM,
+          sinkpad_blocked_cb, lpsink, NULL);
+    else if (!blocked && lpsink->audio_block_id) {
+      gst_pad_remove_probe (opad, lpsink->audio_block_id);
+      PENDING_FLAG_UNSET (lpsink, GST_LP_SINK_TYPE_AUDIO);
+      lpsink->audio_block_id = 0;
+      lpsink->audio_pad_blocked = FALSE;
+    }
+    gst_object_unref (opad);
+  }
+}
+
+static void
+text_set_blocked (GstLpSink * lpsink, gboolean blocked)
+{
+  if (lpsink->text_srcpad_demux) {
+    GstPad *opad = gst_object_ref (lpsink->text_srcpad_demux);
+    if (blocked && lpsink->text_block_id == 0)
+      lpsink->text_block_id =
+          gst_pad_add_probe (opad, GST_PAD_PROBE_TYPE_BLOCK_DOWNSTREAM,
+          sinkpad_blocked_cb, lpsink, NULL);
+    else if (!blocked && lpsink->text_block_id) {
+      gst_pad_remove_probe (opad, lpsink->text_block_id);
+      PENDING_FLAG_UNSET (lpsink, GST_LP_SINK_TYPE_VIDEO);
+      lpsink->text_block_id = 0;
+      lpsink->text_pad_blocked = FALSE;
+    }
+    gst_object_unref (opad);
+  }
+}
+
+static GstPadProbeReturn
+sinkpad_blocked_cb (GstPad * blockedpad, GstPadProbeInfo * info,
+    gpointer user_data)
+{
+  GstLpSink *lpsink = (GstLpSink *) user_data;
+
+  GST_LP_SINK_LOCK (lpsink);
+
+  if (blockedpad == lpsink->video_srcpad_demux) {
+    lpsink->video_pad_blocked = TRUE;
+    GST_DEBUG_OBJECT (blockedpad, "video pad blocked");
+  } else if (blockedpad == lpsink->audio_srcpad_demux) {
+    lpsink->audio_pad_blocked = TRUE;
+    GST_DEBUG_OBJECT (blockedpad, "audio pad blocked");
+  } else if (blockedpad == lpsink->text_srcpad_demux) {
+    lpsink->text_pad_blocked = TRUE;
+    GST_DEBUG_OBJECT (blockedpad, "text pad blocked");
+  }
+
+  /* We reconfigure when for ALL streams:
+   * * there isn't a pad
+   * * OR the pad is blocked
+   * * OR there are no pending blocks on that pad
+   */
+
+  if (lpsink->video_pad_blocked && lpsink->audio_pad_blocked) {
+    GST_DEBUG_OBJECT (lpsink, "All pads blocked -- reconfiguring");
+
+    gst_lp_sink_do_reconfigure (lpsink);
+
+    video_set_blocked (lpsink, FALSE);
+    audio_set_blocked (lpsink, FALSE);
+    text_set_blocked (lpsink, FALSE);
+  }
+
+  GST_LP_SINK_UNLOCK (lpsink);
+
+  return GST_PAD_PROBE_OK;
+}
+
+gboolean
+gst_lp_sink_reconfigure (GstLpSink * lpsink)
+{
+  GST_LOG_OBJECT (lpsink, "Triggering reconfiguration");
+
+  GST_LP_SINK_LOCK (lpsink);
+  video_set_blocked (lpsink, TRUE);
+  audio_set_blocked (lpsink, TRUE);
+  text_set_blocked (lpsink, TRUE);
+  GST_LP_SINK_UNLOCK (lpsink);
+
+  return TRUE;
 }
 
 /**
@@ -776,8 +960,11 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
   }
   GST_LP_SINK_UNLOCK (lpsink);
 
-  gst_pad_set_active (res, TRUE);
-  gst_element_add_pad (GST_ELEMENT_CAST (lpsink), res);
+  if (res) {
+    gst_pad_set_active (res, TRUE);
+    gst_element_add_pad (GST_ELEMENT_CAST (lpsink), res);
+
+  }
 
   return res;
 }
@@ -825,8 +1012,19 @@ gst_lp_sink_release_pad (GstLpSink * lpsink, GstPad * pad)
   GST_LP_SINK_LOCK (lpsink);
   if (pad == lpsink->video_pad) {
     res = &lpsink->video_pad;
+    /*TODO: g_signal_handler_disconnect (lpsink->video_pad,
+       lpsink->video_notify_caps_id); */
+    //video_set_blocked (lpsink, FALSE);
   } else if (pad == lpsink->audio_pad) {
     res = &lpsink->audio_pad;
+    /*TODO: g_signal_handler_disconnect (lpsink->audio_pad,
+       lpsink->audio_notify_caps_id); */
+    //audio_set_blocked (lpsink, FALSE);
+  } else if (pad == lpsink->text_pad) {
+    res = &lpsink->text_pad;
+    /*TODO: g_signal_handler_disconnect (lpsink->text_pad,
+       lpsink->text_notify_caps_id); */
+    //text_set_blocked (lpsink, FALSE);
   } else {
     res = &pad;
     untarget = FALSE;
@@ -889,8 +1087,8 @@ gst_lp_sink_set_property (GObject * object, guint prop_id,
     case PROP_AUDIO_ONLY:
       lpsink->audio_only = g_value_get_boolean (value);
       break;
-    case PROP_AVSINK:
-      lpsink->avsink = g_value_get_boolean (value);
+    case PROP_ENABLE_AVSINK:
+      lpsink->enable_avsink = g_value_get_boolean (value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, spec);
@@ -1035,6 +1233,17 @@ gst_lp_sink_change_state (GstElement * element, GstStateChange transition)
        * sinks */
       do_async_start (lpsink);
       ret = GST_STATE_CHANGE_ASYNC;
+
+      /* block all pads here */
+      /*if (!gst_lp_sink_reconfigure (lpsink))
+         ret = GST_STATE_CHANGE_FAILURE; */
+      break;
+    case GST_STATE_CHANGE_PAUSED_TO_READY:
+      GST_LP_SINK_LOCK (lpsink);
+      video_set_blocked (lpsink, FALSE);
+      audio_set_blocked (lpsink, FALSE);
+      text_set_blocked (lpsink, FALSE);
+      GST_LP_SINK_UNLOCK (lpsink);
       break;
     default:
       /* all other state changes return SUCCESS by default, this value can be

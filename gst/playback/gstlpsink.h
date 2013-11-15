@@ -47,9 +47,20 @@ struct _GstLpSink
 
   GRecMutex lock;               /* to protect group switching */
 
+  GstSinkChain *videochain;
+  GstSinkChain *audiochain;
+  GstSinkChain *textchain;
+  GstAVSinkChain *avchain;
+
   GstElement *video_streamid_demux;
   GstElement *audio_streamid_demux;
   GstElement *text_streamid_demux;
+  GstPad *video_srcpad_demux;
+  GstPad *audio_srcpad_demux;
+  GstPad *text_srcpad_demux;
+  GstPad *video_sinkpad_demux;
+  GstPad *audio_sinkpad_demux;
+  GstPad *text_sinkpad_demux;
 
   GstElement *video_sink;
   GstElement *audio_sink;
@@ -57,6 +68,20 @@ struct _GstLpSink
   GstPad *audio_pad;
   GstPad *video_pad;
   GstPad *text_pad;
+
+  gulong audio_notify_caps_id;
+  gulong video_notify_caps_id;
+  gulong text_notify_caps_id;
+
+  gulong audio_block_id;
+  gulong video_block_id;
+  gulong text_block_id;
+
+  gboolean audio_pad_blocked;
+  gboolean video_pad_blocked;
+  gboolean text_pad_blocked;
+
+  guint32 pending_blocked_pads;
 
   GstFlowReturn ret;
 
@@ -77,7 +102,7 @@ struct _GstLpSink
   gboolean need_async_start;
   gboolean async_pending;
 
-  gboolean avsink;
+  gboolean enable_avsink;
 };
 
 struct _GstLpSinkClass
@@ -115,8 +140,6 @@ struct _GstAVSinkChain
 
   GstPad *video_pad;            /* store audio/video sink's sinkpad */
   GstPad *audio_pad;
-
-  gboolean construct_complete;
 };
 
 GType gst_lp_sink_get_type (void);
@@ -128,6 +151,8 @@ void gst_lp_sink_set_thumbnail_mode (GstLpSink * lpsink,
     gboolean thumbnail_mode);
 void gst_lp_sink_set_interleaving_type (GstLpSink * lpsink,
     gint interleaving_type);
+
+gboolean         gst_lp_sink_reconfigure    (GstLpSink * lpsink);
 
 G_END_DECLS
 #endif // __GST_LP_SINK_H__
