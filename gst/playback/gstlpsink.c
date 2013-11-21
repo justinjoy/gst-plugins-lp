@@ -108,6 +108,8 @@ GstElement *gst_lp_sink_get_sink (GstLpSink * lpsink, GstLpSinkType type);
 static gboolean gst_lp_sink_do_reconfigure (GstLpSink * lpsink);
 static gboolean add_chain (GstSinkChain * chain, gboolean add);
 static gboolean activate_chain (GstSinkChain * chain, gboolean activate);
+static void stream_set_blocked (GstLpSink * lpsink, gboolean blocked,
+    GstLpSinkType type);
 
 static void
 _do_init (GType type)
@@ -441,11 +443,11 @@ gen_audio_chain (GstLpSink * lpsink, GstSinkChain * chain)
       (lpsink->audio_resource & (1 << 31)) ? "MIXER" : "ADEC",
       (lpsink->audio_resource & ~(1 << 31)));
 
-  if (g_object_class_find_property (G_OBJECT_GET_CLASS (chain->sink),
+  if (g_object_class_find_property (G_OBJECT_GET_CLASS (sink_element),
           "audio-only")) {
-    gchar *elem_name = gst_element_get_name (chain->sink);
+    gchar *elem_name = gst_element_get_name (sink_element);
 
-    g_object_set (chain->sink, "audio-only", lpsink->audio_only, NULL);
+    g_object_set (sink_element, "audio-only", lpsink->audio_only, NULL);
     GST_INFO_OBJECT (lpsink, "Audio-only property is set on %s to %s",
         elem_name, ((lpsink->audio_only) ? "TRUE" : "FALSE"));
 
@@ -545,7 +547,9 @@ gen_video_chain (GstLpSink * lpsink, GstSinkChain * chain)
 
   queue_srcpad = gst_element_get_static_pad (chain->queue, "src");
   sink_sinkpad = gst_element_get_request_pad (chain->sink, "sink_%d");
-  gst_pad_link_full (queue_srcpad, sink_sinkpad,
+  //gst_pad_link_full (queue_srcpad, sink_sinkpad,
+  //    GST_PAD_LINK_CHECK_TEMPLATE_CAPS);
+  gst_element_link_pads_full (chain->queue, "src", chain->sink, NULL,
       GST_PAD_LINK_CHECK_TEMPLATE_CAPS);
 
   queue_sinkpad = gst_element_get_static_pad (chain->queue, "sink");
@@ -644,9 +648,13 @@ pad_added_cb (GstElement * element, GstPad * pad, GstLpSink * lpsink)
 
 
   queue = gst_element_factory_make ("queue", NULL);
+  g_object_set (queue, "silent", TRUE, NULL);
+  gst_bin_add (GST_BIN_CAST (lpsink), queue);
+  gst_element_set_state (queue, GST_STATE_PAUSED);
 
   queue_sinkpad = gst_element_get_static_pad (queue, "sink");
-  gst_pad_link (pad, queue_sinkpad);
+  //gst_pad_link (pad, queue_sinkpad);
+  gst_pad_link_full (pad, queue_sinkpad, GST_PAD_LINK_CHECK_NOTHING);
   gst_object_unref (queue_sinkpad);
 
   queue_srcpad = gst_element_get_static_pad (queue, "src");
@@ -686,20 +694,25 @@ pad_added_cb (GstElement * element, GstPad * pad, GstLpSink * lpsink)
 void
 gst_lp_sink_set_all_pads_blocked (GstLpSink * lpsink)
 {
-  //gst_lp_sink_do_reconfigure (lpsink);
+  GST_LP_SINK_LOCK (lpsink);
+  gst_lp_sink_do_reconfigure (lpsink);
+
+  stream_set_blocked (lpsink, FALSE, GST_LP_SINK_TYPE_VIDEO);
+  stream_set_blocked (lpsink, FALSE, GST_LP_SINK_TYPE_AUDIO);
+  stream_set_blocked (lpsink, FALSE, GST_LP_SINK_TYPE_TEXT);
+  GST_LP_SINK_UNLOCK (lpsink);
 }
 
 static gboolean
 gst_lp_sink_do_reconfigure (GstLpSink * lpsink)
 {
-  GList *chain_list = NULL;
+  GList *item = NULL;
   GstSinkChain *chain = NULL;
 
   GST_LP_SINK_LOCK (lpsink);
 
-  chain_list = g_list_first (lpsink->sink_chains);
-
-  while (chain_list && (chain = (GstSinkChain *) chain_list->data)) {
+  for (item = g_list_first (lpsink->sink_chains); item; item = item->next) {
+    chain = (GstSinkChain *) item->data;
     if (lpsink->enable_avsink) {
       //TODO: construct multisink
     }
@@ -731,7 +744,6 @@ gst_lp_sink_do_reconfigure (GstLpSink * lpsink)
       gst_pad_link_full (chain->peer_srcpad_queue, sink_sinkpad,
           GST_PAD_LINK_CHECK_NOTHING);
     }
-    chain_list = g_list_next (lpsink->sink_chains);
   }
 
   do_async_done (lpsink);
@@ -780,7 +792,7 @@ gst_lp_sink_setup_element (GstLpSink * lpsink, GstElement ** streamid_demux,
 static void
 stream_set_blocked (GstLpSink * lpsink, gboolean blocked, GstLpSinkType type)
 {
-  GList *chain_list = NULL;
+  GList *item = NULL;
   GstSinkChain *chain = NULL;
 
   if (!lpsink->sink_chains) {
@@ -788,22 +800,21 @@ stream_set_blocked (GstLpSink * lpsink, gboolean blocked, GstLpSinkType type)
     return;
   }
 
-  chain_list = g_list_first (lpsink->sink_chains);
+  for (item = g_list_first (lpsink->sink_chains); item; item = item->next) {
+    chain = (GstSinkChain *) item->data;
 
-  while (chain_list && (chain = (GstSinkChain *) chain_list->data)) {
     if (chain->type != type)
       continue;
 
-    if (chain->peer_srcpad_blocked && chain->block_id)
-      chain->block_id =
-          gst_pad_add_probe (chain->peer_srcpad_queue,
-          GST_PAD_PROBE_TYPE_BLOCK_DOWNSTREAM, srcpad_blocked_cb, lpsink, NULL);
-    else if (!chain->peer_srcpad_blocked && chain->block_id) {
-      gst_pad_remove_probe (chain->peer_srcpad_queue, chain->block_id);
-      chain->block_id = 0;
-      chain->peer_srcpad_blocked = FALSE;
-    }
-    chain_list = g_list_next (lpsink->sink_chains);
+    /*if (chain->peer_srcpad_blocked && chain->block_id) {
+       chain->block_id =
+       gst_pad_add_probe (chain->peer_srcpad_queue,
+       GST_PAD_PROBE_TYPE_BLOCK_DOWNSTREAM, srcpad_blocked_cb, lpsink, NULL);
+       } else if (!chain->peer_srcpad_blocked && chain->block_id) { */
+    gst_pad_remove_probe (chain->peer_srcpad_queue, chain->block_id);
+    chain->block_id = 0;
+    chain->peer_srcpad_blocked = FALSE;
+    //}
   }
 }
 
@@ -864,9 +875,8 @@ text_set_blocked (GstLpSink * lpsink, gboolean blocked)
 */
 
 static gboolean
-_find_next (GList * chain_list, GstPad * blockedpad)
+_find_next (GstSinkChain * chain, GstPad * blockedpad)
 {
-  GstSinkChain *chain = chain_list->data;
   if (chain->peer_srcpad_queue == blockedpad)
     return TRUE;
   return FALSE;
@@ -886,9 +896,15 @@ srcpad_blocked_cb (GstPad * blockedpad, GstPadProbeInfo * info,
               blockedpad, (GCompareFunc) _find_next))) {
     const gchar *pad_type = NULL;
     gchar *pad_name = NULL;
+    gchar *stream_id = NULL;
 
     chain = (GstSinkChain *) find->data;
     chain->peer_srcpad_blocked = TRUE;
+    stream_id = gst_pad_get_stream_id (blockedpad);
+    g_signal_emit (G_OBJECT (lpsink),
+        gst_lp_sink_signals[SIGNAL_PAD_BLOCKED], 0, stream_id, TRUE);
+    if (stream_id)
+      g_free (stream_id);
 
     if (chain->type == GST_LP_SINK_TYPE_VIDEO)
       pad_type = "video";
@@ -910,6 +926,7 @@ srcpad_blocked_cb (GstPad * blockedpad, GstPadProbeInfo * info,
    */
 
   //TODO //FIXME
+/*
   if (g_list_nth_data (lpsink->sink_chains, 1)) {
     GST_DEBUG_OBJECT (lpsink, "All pads blocked -- reconfiguring");
 
@@ -919,6 +936,7 @@ srcpad_blocked_cb (GstPad * blockedpad, GstPadProbeInfo * info,
     stream_set_blocked (lpsink, FALSE, GST_LP_SINK_TYPE_AUDIO);
     stream_set_blocked (lpsink, FALSE, GST_LP_SINK_TYPE_TEXT);
   }
+*/
 
   GST_LP_SINK_UNLOCK (lpsink);
 
