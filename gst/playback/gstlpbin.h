@@ -75,6 +75,7 @@ struct _GstLpBin
   gulong audio_tags_changed_id;
   gulong video_tags_changed_id;
   gulong text_tags_changed_id;
+  gulong pad_blocked_id;
 
   guint naudio;
   guint nvideo;
@@ -115,6 +116,9 @@ struct _GstLpBin
   gboolean *text_chain_linked;
 
   gint interleaving_type;
+
+  GHashTable *stream_id_blocked;
+  gboolean all_pads_blocked;
 };
 
 struct _GstLpBinClass

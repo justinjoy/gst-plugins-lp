@@ -80,7 +80,7 @@ struct _GstFCBinClass
   void (*text_tags_changed) (GstFCBin * fcbin, gint stream);
 
   void (*element_configured) (GstFCBin * fcbin, gint type, GstPad * sinkpad,
-      GstPad * srcpad);
+      GstPad * srcpad, gchar * stream_id);
 };
 
 GType gst_fc_bin_get_type (void);

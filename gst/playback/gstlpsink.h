@@ -101,6 +101,7 @@ struct _GstLpSink
 struct _GstLpSinkClass
 {
   GstBinClass parent_class;
+  void (*pad_blocked) (GstLpSink * lpsink, gchar * steram_id, gboolean blocked);
 };
 
 typedef enum
@@ -152,7 +153,8 @@ void gst_lp_sink_set_thumbnail_mode (GstLpSink * lpsink,
 void gst_lp_sink_set_interleaving_type (GstLpSink * lpsink,
     gint interleaving_type);
 
-gboolean         gst_lp_sink_reconfigure    (GstLpSink * lpsink);
+gboolean gst_lp_sink_reconfigure (GstLpSink * lpsink);
+void gst_lp_sink_set_all_pads_blocked (GstLpSink * lpsink);
 
 G_END_DECLS
 #endif // __GST_LP_SINK_H__

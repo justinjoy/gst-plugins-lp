@@ -45,6 +45,13 @@ static GstStaticPadTemplate texttemplate = GST_STATIC_PAD_TEMPLATE ("text_sink",
     GST_PAD_REQUEST,
     GST_STATIC_CAPS_ANY);
 
+/* signals */
+enum
+{
+  SIGNAL_PAD_BLOCKED,
+  LAST_SIGNAL
+};
+
 /* props */
 enum
 {
@@ -57,6 +64,8 @@ enum
   PROP_ENABLE_AVSINK,
   PROP_LAST
 };
+
+static guint gst_lp_sink_signals[LAST_SIGNAL] = { 0 };
 
 #define DEFAULT_THUMBNAIL_MODE FALSE
 #define DEFAULT_ENABLE_AVSINK TRUE
@@ -170,6 +179,20 @@ gst_lp_sink_class_init (GstLpSinkClass * klass)
       g_param_spec_boolean ("enable-avsink", "enable avsink",
           "avsink is a single sink that accept both of audio and video", FALSE,
           G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
+
+  /**
+   * GstLpSink::pad-blocked
+   * @lpsink: a #GstLpSink
+   *
+   * This signal is emitted after srcpad of queue has been blocked by probe function.
+   *
+   */
+  gst_lp_sink_signals[SIGNAL_PAD_BLOCKED] =
+      g_signal_new ("pad-blocked", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST,
+      G_STRUCT_OFFSET (GstLpSinkClass, pad_blocked), NULL, NULL,
+      g_cclosure_marshal_generic, G_TYPE_NONE, 2, G_TYPE_STRING,
+      G_TYPE_BOOLEAN);
 
   gst_element_class_add_pad_template (gstelement_klass,
       gst_static_pad_template_get (&audiotemplate));
@@ -658,6 +681,12 @@ pad_added_cb (GstElement * element, GstPad * pad, GstLpSink * lpsink)
 
   if (reconfigure)
     gst_lp_sink_reconfigure (lpsink);
+}
+
+void
+gst_lp_sink_set_all_pads_blocked (GstLpSink * lpsink)
+{
+  //gst_lp_sink_do_reconfigure (lpsink);
 }
 
 static gboolean

@@ -122,7 +122,10 @@ static void video_tags_changed_cb (GstElement * fcbin,
 static void text_tags_changed_cb (GstElement * fcbin,
     gint stream_id, GstLpBin * lpbin);
 static void element_configured_cb (GstElement * fcbin,
-    gint type, GstPad * sinkpad, GstPad * srcpad, GstLpBin * lpbin);
+    gint type, GstPad * sinkpad, GstPad * srcpad, gchar * stream_id,
+    GstLpBin * lpbin);
+static void pad_blocked_cb (GstElement * lpsink, gchar * stream_id,
+    gboolean blocked, GstLpBin * lpbin);
 
 /* private functions */
 static gboolean gst_lp_bin_setup_element (GstLpBin * lpbin);
@@ -166,6 +169,8 @@ static gboolean gst_lp_bin_get_buffering_query (GstQuery * query,
 static gboolean gst_lp_bin_find_queue (GstQuery * query, gchar * elem_name,
     gchar * find_name, GObject * child_elem, gint * n_queue,
     gint * total_percent, gint64 * total_start, gint64 * total_stop);
+static void replace_stream_id_blocked_table (gchar * stream_id,
+    gboolean blocked, GstLpBin * lpbin);
 
 static GstElementClass *parent_class;
 
@@ -688,6 +693,12 @@ gst_lp_bin_init (GstLpBin * lpbin)
   lpbin->text_chain_linked = FALSE;
 
   lpbin->interleaving_type = 0;
+
+  lpbin->stream_id_blocked =
+      g_hash_table_new_full (g_str_hash, g_str_equal, (GDestroyNotify) g_free,
+      (GDestroyNotify) g_free);
+
+  lpbin->all_pads_blocked = FALSE;
 }
 
 static void
@@ -730,6 +741,11 @@ gst_lp_bin_finalize (GObject * obj)
 
   if (lpbin->elements_str) {
     g_free (lpbin->elements_str);
+  }
+
+  if (lpbin->stream_id_blocked != NULL) {
+    g_hash_table_unref (lpbin->stream_id_blocked);
+    lpbin->stream_id_blocked = NULL;
   }
 
   g_rec_mutex_clear (&lpbin->lock);
@@ -1254,10 +1270,52 @@ no_more_pads_cb (GstElement * decodebin, GstLpBin * lpbin)
 }
 
 static void
+foreach_check_blocked (gpointer key, gpointer value, gpointer user_data)
+{
+  gchar *stream_id = (gchar *) key;
+  gboolean blocked = (gboolean) value;
+  GstLpBin *lpbin = (GstLpBin *) user_data;
+
+  if (blocked == FALSE) {
+    lpbin->all_pads_blocked = FALSE;
+  }
+}
+
+static void
+replace_stream_id_blocked_table (gchar * stream_id, gboolean blocked,
+    GstLpBin * lpbin)
+{
+  lpbin->all_pads_blocked = TRUE;
+
+  GST_OBJECT_LOCK (lpbin);
+  g_hash_table_replace (lpbin->stream_id_blocked, stream_id, blocked);
+  GST_OBJECT_UNLOCK (lpbin);
+
+  g_hash_table_foreach (lpbin->stream_id_blocked, foreach_check_blocked, lpbin);
+
+  if (lpbin->all_pads_blocked) {
+    gst_lp_sink_set_all_pads_blocked (lpbin->lpsink);
+  }
+}
+
+static void
+pad_blocked_cb (GstElement * lpsink, gchar * stream_id, gboolean blocked,
+    GstLpBin * lpbin)
+{
+  replace_stream_id_blocked_table (stream_id, blocked, lpbin);
+}
+
+static void
 element_configured_cb (GstElement * fcbin, gint type, GstPad * sinkpad,
-    GstPad * srcpad, GstLpBin * lpbin)
+    GstPad * srcpad, gchar * stream_id, GstLpBin * lpbin)
 {
   GstPad *lpsink_sinkpad = NULL;
+
+  if (stream_id) {
+    GST_OBJECT_LOCK (lpbin);
+    g_hash_table_insert (lpbin->stream_id_blocked, g_strdup (stream_id), FALSE);
+    GST_OBJECT_UNLOCK (lpbin);
+  }
 
   if (type == GST_LP_SINK_TYPE_AUDIO) {
     GST_INFO_OBJECT (lpbin, "element_configured_cb : AUDIO");
@@ -1419,7 +1477,13 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
   g_signal_connect (lpbin->fcbin, "element-configured",
       G_CALLBACK (element_configured_cb), lpbin);
 
+<<<<<<< HEAD
   lpbin->lpsink = gst_element_factory_make ("lpsink", NULL);
+=======
+  lpbin->pad_blocked_id =
+      g_signal_connect (lpbin->lpsink, "pad-blocked",
+      G_CALLBACK (pad_blocked_cb), lpbin);
+>>>>>>> lpbin: check counting all of streams and handle blocked pads
 
   /* 
    * FIXME: These are not compatible with multi-sink support.
@@ -1507,6 +1571,7 @@ gst_lp_bin_deactive (GstLpBin * lpbin)
   REMOVE_SIGNAL (lpbin, lpbin->audio_tags_changed_id);
   REMOVE_SIGNAL (lpbin, lpbin->video_tags_changed_id);
   REMOVE_SIGNAL (lpbin, lpbin->text_tags_changed_id);
+  REMOVE_SIGNAL (lpbin, lpbin->pad_blocked_id);
   if (lpbin->uridecodebin) {
     gst_element_set_state (lpbin->uridecodebin, GST_STATE_NULL);
     gst_bin_remove (GST_BIN_CAST (lpbin), lpbin->uridecodebin);

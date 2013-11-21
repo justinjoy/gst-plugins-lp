@@ -283,8 +283,8 @@ gst_fc_bin_class_init (GstFCBinClass * klass)
       g_signal_new ("element-configured", G_TYPE_FROM_CLASS (klass),
       G_SIGNAL_RUN_LAST,
       G_STRUCT_OFFSET (GstFCBinClass, element_configured), NULL, NULL,
-      g_cclosure_marshal_generic, G_TYPE_NONE, 3, G_TYPE_INT, GST_TYPE_PAD,
-      GST_TYPE_PAD);
+      g_cclosure_marshal_generic, G_TYPE_NONE, 4, G_TYPE_INT, GST_TYPE_PAD,
+      GST_TYPE_PAD, G_TYPE_STRING);
 
   //element_class->change_state = GST_DEBUG_FUNCPTR (gst_fc_bin_change_state);
   element_class->request_new_pad =
@@ -681,6 +681,7 @@ gst_fc_bin_do_configure (GstFCBin * fcbin, GstPad * ghost_sinkpad,
 {
   GstFCSelect *select = NULL;
   GstPad *sinkpad = NULL;
+  gchar *stream_id = NULL;
 
   if (type == GST_LP_SINK_TYPE_AUDIO) {
     select = &fcbin->select[GST_FC_BIN_STREAM_AUDIO];
@@ -695,10 +696,12 @@ gst_fc_bin_do_configure (GstFCBin * fcbin, GstPad * ghost_sinkpad,
   }
 
   if (select->selector == NULL) {
-    if (multiple_stream)
+    if (multiple_stream) {
       select->selector = gst_element_factory_make ("funnel", NULL);
-    else
+    } else {
       select->selector = gst_element_factory_make ("input-selector", NULL);
+      stream_id = gst_pad_get_stream_id (ghost_sinkpad);
+    }
 
     if (select->selector == NULL) {
       /* gst_element_post_message (GST_ELEMENT_CAST (fcbin), 
@@ -717,6 +720,11 @@ gst_fc_bin_do_configure (GstFCBin * fcbin, GstPad * ghost_sinkpad,
       gst_element_set_state (select->selector, GST_STATE_PAUSED);
     }
   }
+
+  if (multiple_stream) {
+    stream_id = gst_pad_get_stream_id (ghost_sinkpad);
+  }
+
 
   if (select->srcpad == NULL) {
     if (select->selector) {
@@ -762,12 +770,14 @@ gst_fc_bin_do_configure (GstFCBin * fcbin, GstPad * ghost_sinkpad,
 
       g_signal_emit (G_OBJECT (fcbin),
           gst_fc_bin_signals[SIGNAL_ELEMENT_CONFIGURED], 0, type, sinkpad,
-          select->srcpad);
+          select->srcpad, g_strdup (stream_id));
 
       g_ptr_array_add (select->channels, sinkpad);
     }
     g_free (pad_name);
   }
+  if (stream_id)
+    g_free (stream_id);
 
 }
 
