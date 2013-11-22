@@ -696,7 +696,7 @@ gst_lp_bin_init (GstLpBin * lpbin)
 
   lpbin->stream_id_blocked =
       g_hash_table_new_full (g_str_hash, g_str_equal, (GDestroyNotify) g_free,
-      (GDestroyNotify) g_free);
+      NULL);
 
   lpbin->all_pads_blocked = FALSE;
 }
@@ -742,11 +742,8 @@ gst_lp_bin_finalize (GObject * obj)
   if (lpbin->elements_str) {
     g_free (lpbin->elements_str);
   }
-
-  if (lpbin->stream_id_blocked != NULL) {
-    g_hash_table_unref (lpbin->stream_id_blocked);
-    lpbin->stream_id_blocked = NULL;
-  }
+  //g_hash_table_destroy (lpbin->stream_id_blocked); 
+  //lpbin->stream_id_blocked = NULL;
 
   g_rec_mutex_clear (&lpbin->lock);
   g_mutex_clear (&lpbin->elements_lock);

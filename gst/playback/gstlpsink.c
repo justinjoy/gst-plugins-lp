@@ -653,7 +653,6 @@ pad_added_cb (GstElement * element, GstPad * pad, GstLpSink * lpsink)
   gst_element_set_state (queue, GST_STATE_PAUSED);
 
   queue_sinkpad = gst_element_get_static_pad (queue, "sink");
-  //gst_pad_link (pad, queue_sinkpad);
   gst_pad_link_full (pad, queue_sinkpad, GST_PAD_LINK_CHECK_NOTHING);
   gst_object_unref (queue_sinkpad);
 
@@ -694,6 +693,8 @@ pad_added_cb (GstElement * element, GstPad * pad, GstLpSink * lpsink)
 void
 gst_lp_sink_set_all_pads_blocked (GstLpSink * lpsink)
 {
+  GST_DEBUG_OBJECT (lpsink, "all pads are blocked!");
+
   GST_LP_SINK_LOCK (lpsink);
   gst_lp_sink_do_reconfigure (lpsink);
 
@@ -806,15 +807,15 @@ stream_set_blocked (GstLpSink * lpsink, gboolean blocked, GstLpSinkType type)
     if (chain->type != type)
       continue;
 
-    /*if (chain->peer_srcpad_blocked && chain->block_id) {
-       chain->block_id =
-       gst_pad_add_probe (chain->peer_srcpad_queue,
-       GST_PAD_PROBE_TYPE_BLOCK_DOWNSTREAM, srcpad_blocked_cb, lpsink, NULL);
-       } else if (!chain->peer_srcpad_blocked && chain->block_id) { */
-    gst_pad_remove_probe (chain->peer_srcpad_queue, chain->block_id);
-    chain->block_id = 0;
-    chain->peer_srcpad_blocked = FALSE;
-    //}
+    if (blocked && chain->block_id == 0) {
+      chain->block_id =
+          gst_pad_add_probe (chain->peer_srcpad_queue,
+          GST_PAD_PROBE_TYPE_BLOCK_DOWNSTREAM, srcpad_blocked_cb, lpsink, NULL);
+    } else if (!blocked && chain->block_id) {
+      gst_pad_remove_probe (chain->peer_srcpad_queue, chain->block_id);
+      chain->block_id = 0;
+      chain->peer_srcpad_blocked = FALSE;
+    }
   }
 }
 
@@ -900,11 +901,11 @@ srcpad_blocked_cb (GstPad * blockedpad, GstPadProbeInfo * info,
 
     chain = (GstSinkChain *) find->data;
     chain->peer_srcpad_blocked = TRUE;
+
     stream_id = gst_pad_get_stream_id (blockedpad);
     g_signal_emit (G_OBJECT (lpsink),
         gst_lp_sink_signals[SIGNAL_PAD_BLOCKED], 0, stream_id, TRUE);
-    if (stream_id)
-      g_free (stream_id);
+    g_free (stream_id);
 
     if (chain->type == GST_LP_SINK_TYPE_VIDEO)
       pad_type = "video";

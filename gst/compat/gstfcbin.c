@@ -768,16 +768,16 @@ gst_fc_bin_do_configure (GstFCBin * fcbin, GstPad * ghost_sinkpad,
       g_object_set_data (G_OBJECT (ghost_sinkpad), "fcbin.srcpad",
           select->srcpad);
 
-      g_signal_emit (G_OBJECT (fcbin),
-          gst_fc_bin_signals[SIGNAL_ELEMENT_CONFIGURED], 0, type, sinkpad,
-          select->srcpad, g_strdup (stream_id));
+      if (stream_id)
+        g_signal_emit (G_OBJECT (fcbin),
+            gst_fc_bin_signals[SIGNAL_ELEMENT_CONFIGURED], 0, type, sinkpad,
+            select->srcpad, stream_id);
 
       g_ptr_array_add (select->channels, sinkpad);
     }
     g_free (pad_name);
   }
-  if (stream_id)
-    g_free (stream_id);
+  g_free (stream_id);
 
 }
 
