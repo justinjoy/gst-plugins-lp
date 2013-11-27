@@ -113,6 +113,8 @@ struct _GstLpBin
   gboolean *audio_chain_linked;
   gboolean *video_chain_linked;
   gboolean *text_chain_linked;
+
+  gint interleaving_type;
 };
 
 struct _GstLpBinClass

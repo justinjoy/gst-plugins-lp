@@ -193,6 +193,7 @@ gst_lp_sink_init (GstLpSink * lpsink)
   lpsink->video_pad = NULL;
   lpsink->audio_pad = NULL;
   lpsink->thumbnail_mode = DEFAULT_THUMBNAIL_MODE;
+  lpsink->interleaving_type = 0;
 
   lpsink->video_resource = 0;
   lpsink->audio_resource = 0;
@@ -298,6 +299,13 @@ gst_lp_sink_set_thumbnail_mode (GstLpSink * lpsink, gboolean thumbnail_mode)
 {
   GST_DEBUG_OBJECT (lpsink, "set thumbnail mode as %d", thumbnail_mode);
   lpsink->thumbnail_mode = thumbnail_mode;
+}
+
+void
+gst_lp_sink_set_interleaving_type (GstLpSink * lpsink, gint interleaving_type)
+{
+  GST_DEBUG_OBJECT (lpsink, "set interleaving type as %d", interleaving_type);
+  lpsink->interleaving_type = interleaving_type;
 }
 
 void
@@ -475,6 +483,16 @@ gen_video_chain (GstLpSink * lpsink)
     GST_INFO_OBJECT (sink_element, "gen_video_chain : thumbnail mode set as %d",
         lpsink->thumbnail_mode);
     g_object_set (sink_element, "thumbnail-mode", lpsink->thumbnail_mode, NULL);
+  }
+
+  if (lpsink->interleaving_type > 0
+      && g_object_class_find_property (G_OBJECT_GET_CLASS (sink_element),
+          "interleaving-type")) {
+    GST_INFO_OBJECT (sink_element,
+        "gen_video_chain : interleaving type set as %d",
+        lpsink->interleaving_type);
+    g_object_set (sink_element, "interleaving-type", lpsink->interleaving_type,
+        NULL);
   }
 
   GST_DEBUG_OBJECT (sink_element,

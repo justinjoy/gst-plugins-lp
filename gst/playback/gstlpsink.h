@@ -61,6 +61,7 @@ struct _GstLpSink
   GstFlowReturn ret;
 
   gboolean thumbnail_mode;
+  gint interleaving_type;
   guint video_resource;
   guint audio_resource;
 
@@ -125,6 +126,8 @@ void gst_lp_sink_set_sink (GstLpSink * lpsink, GstLpSinkType type,
 GstElement *gst_lp_sink_get_sink (GstLpSink * lpsink, GstLpSinkType type);
 void gst_lp_sink_set_thumbnail_mode (GstLpSink * lpsink,
     gboolean thumbnail_mode);
+void gst_lp_sink_set_interleaving_type (GstLpSink * lpsink,
+    gint interleaving_type);
 
 G_END_DECLS
 #endif // __GST_LP_SINK_H__

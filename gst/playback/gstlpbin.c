@@ -57,6 +57,7 @@ enum
   PROP_SMART_PROPERTIES,
   PROP_BUFFER_SIZE,
   PROP_BUFFER_DURATION,
+  PROP_INTERLEAVING_TYPE,
   PROP_LAST
 };
 
@@ -148,6 +149,8 @@ static GstBuffer *gst_lp_bin_retrieve_thumbnail (GstLpBin * lpbin, gint width,
     gint height, gchar * format);
 static void gst_lp_bin_set_thumbnail_mode (GstLpBin * lpbin,
     gboolean thumbnail_mode);
+static void gst_lp_bin_set_interleaving_type (GstLpBin * lpbin,
+    gint interleaving_type);
 static GstStructure *gst_lp_bin_caps_video (GstLpBin * lpbin);
 static void gst_lp_bin_set_property_table (GstLpBin * lpbin, gchar * maps);
 static void gst_lp_bin_do_property_set (GstLpBin * lpbin, GstElement * element);
@@ -345,6 +348,11 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
           "Buffer duration when buffering network streams",
           -1, G_MAXINT64, DEFAULT_BUFFER_DURATION,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property (gobject_klass, PROP_INTERLEAVING_TYPE,
+      g_param_spec_int ("interleaving-type", "Interleaving type",
+          "Interleaving type uses for vdecsink",
+          0, 2147483647, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   gst_lp_bin_signals[SIGNAL_ABOUT_TO_FINISH] =
       g_signal_new ("about-to-finish", G_TYPE_FROM_CLASS (klass),
@@ -679,6 +687,8 @@ gst_lp_bin_init (GstLpBin * lpbin)
   lpbin->audio_chain_linked = FALSE;
   lpbin->video_chain_linked = FALSE;
   lpbin->text_chain_linked = FALSE;
+
+  lpbin->interleaving_type = 0;
 }
 
 static void
@@ -1058,6 +1068,9 @@ gst_lp_bin_set_property (GObject * object, guint prop_id,
     case PROP_BUFFER_DURATION:
       lpbin->buffer_duration = g_value_get_int64 (value);
       break;
+    case PROP_INTERLEAVING_TYPE:
+      gst_lp_bin_set_interleaving_type (lpbin, g_value_get_int (value));
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
   }
@@ -1169,6 +1182,9 @@ gst_lp_bin_get_property (GObject * object, guint prop_id, GValue * value,
       GST_OBJECT_LOCK (lpbin);
       g_value_set_int64 (value, lpbin->buffer_duration);
       GST_OBJECT_UNLOCK (lpbin);
+      break;
+    case PROP_INTERLEAVING_TYPE:
+      g_value_set_int (value, lpbin->interleaving_type);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -1324,6 +1340,15 @@ gst_lp_bin_set_thumbnail_mode (GstLpBin * lpbin, gboolean thumbnail_mode)
       thumbnail_mode);
   lpbin->thumbnail_mode = thumbnail_mode;
   gst_lp_sink_set_thumbnail_mode (lpbin->lpsink, thumbnail_mode);
+}
+
+static void
+gst_lp_bin_set_interleaving_type (GstLpBin * lpbin, gint interleaving_type)
+{
+  GST_DEBUG_OBJECT (lpbin, "set interleaving-type to lpsink as %d",
+      interleaving_type);
+  lpbin->interleaving_type = interleaving_type;
+  gst_lp_sink_set_interleaving_type (lpbin->lpsink, interleaving_type);
 }
 
 
