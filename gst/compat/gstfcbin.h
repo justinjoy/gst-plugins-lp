@@ -68,6 +68,17 @@ struct _GstFCBin
   gint current_text;            /* the currently selected stream */
 
   GstFCSelect select[GST_FC_BIN_STREAM_LAST];
+
+  GstPad *audio_srcpad;
+  GstPad *video_srcpad;
+  GstPad *text_srcpad;
+
+  gulong audio_block_id;
+  gulong video_block_id;
+  gulong text_block_id;
+
+  gint nb_streams;
+  gint nb_current_stream;
 };
 
 struct _GstFCBinClass
@@ -81,6 +92,8 @@ struct _GstFCBinClass
 
   void (*element_configured) (GstFCBin * fcbin, gint type, GstPad * sinkpad,
       GstPad * srcpad, gchar * stream_id);
+
+  gboolean *(*unblock_sinkpads) (GstFCBin * fcbin);
 };
 
 GType gst_fc_bin_get_type (void);

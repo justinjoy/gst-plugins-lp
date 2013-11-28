@@ -49,6 +49,7 @@ static GstStaticPadTemplate texttemplate = GST_STATIC_PAD_TEMPLATE ("text_sink",
 enum
 {
   SIGNAL_PAD_BLOCKED,
+  SIGNAL_UNBLOCK_SINKPADS,
   LAST_SIGNAL
 };
 
@@ -110,6 +111,7 @@ static gboolean add_chain (GstSinkChain * chain, gboolean add);
 static gboolean activate_chain (GstSinkChain * chain, gboolean activate);
 static void stream_set_blocked (GstLpSink * lpsink, gboolean blocked,
     GstLpSinkType type);
+static gboolean gst_lp_sink_unblock_sinkpads (GstLpSink * lpsink);
 
 static void
 _do_init (GType type)
@@ -196,6 +198,12 @@ gst_lp_sink_class_init (GstLpSinkClass * klass)
       g_cclosure_marshal_generic, G_TYPE_NONE, 2, G_TYPE_STRING,
       G_TYPE_BOOLEAN);
 
+  gst_lp_sink_signals[SIGNAL_UNBLOCK_SINKPADS] =
+      g_signal_new ("unblock-sinkpads", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
+      G_STRUCT_OFFSET (GstLpSinkClass, unblock_sinkpads), NULL, NULL,
+      g_cclosure_marshal_generic, G_TYPE_BOOLEAN, 0);
+
   gst_element_class_add_pad_template (gstelement_klass,
       gst_static_pad_template_get (&audiotemplate));
   gst_element_class_add_pad_template (gstelement_klass,
@@ -214,6 +222,8 @@ gst_lp_sink_class_init (GstLpSinkClass * klass)
       GST_DEBUG_FUNCPTR (gst_lp_sink_request_new_pad);
   gstelement_klass->release_pad =
       GST_DEBUG_FUNCPTR (gst_lp_sink_release_request_pad);
+
+  klass->unblock_sinkpads = GST_DEBUG_FUNCPTR (gst_lp_sink_unblock_sinkpads);
 
   gstbin_klass->handle_message = GST_DEBUG_FUNCPTR (gst_lp_sink_handle_message);
 }
@@ -637,6 +647,76 @@ srcpad_blocked_cb (GstPad * blockedpad, GstPadProbeInfo * info,
     gpointer user_data);
 
 static void
+caps_notify_cb_from_demux (GstPad * pad, GParamSpec * unused,
+    GstLpSink * lpsink)
+{
+  GstCaps *caps = NULL;
+  GstElement *element = NULL;
+  GstPad *active_pad = NULL;
+  GstElement *queue = NULL;
+  GstPad *queue_sinkpad = NULL;
+  GstPad *queue_srcpad = NULL;
+  gulong *block_id = NULL;
+  gboolean reconfigure = FALSE;
+  GstSinkChain *chain = NULL;
+
+  g_object_get (pad, "caps", &caps, NULL);
+  GST_DEBUG_OBJECT (lpsink, "caps_notify_cb_from_demux : caps = %s",
+      gst_caps_to_string (caps));
+  element = gst_pad_get_parent_element (pad);
+  g_object_get (element, "active-pad", &active_pad, NULL);
+
+  if (gst_pad_is_linked (active_pad)) {
+    return;
+  }
+
+  queue = gst_element_factory_make ("queue", NULL);
+  g_object_set (queue, "silent", TRUE, NULL);
+  gst_bin_add (GST_BIN_CAST (lpsink), queue);
+  gst_element_set_state (queue, GST_STATE_PAUSED);
+
+  queue_sinkpad = gst_element_get_static_pad (queue, "sink");
+
+  gst_pad_link_full (active_pad, queue_sinkpad, GST_PAD_LINK_CHECK_NOTHING);
+  gst_object_unref (queue_sinkpad);
+
+  queue_srcpad = gst_element_get_static_pad (queue, "src");
+
+  GST_LP_SINK_LOCK (lpsink);
+  chain = g_slice_alloc0 (sizeof (GstSinkChain));
+  block_id = &chain->block_id;
+  chain->peer_srcpad_queue = gst_object_ref (queue_srcpad);
+  chain->caps = gst_caps_ref (caps);
+
+  if (element == lpsink->video_streamid_demux)
+    chain->type = GST_LP_SINK_TYPE_VIDEO;
+  else if (element == lpsink->audio_streamid_demux)
+    chain->type = GST_LP_SINK_TYPE_AUDIO;
+  else if (element == lpsink->text_streamid_demux)
+    chain->type = GST_LP_SINK_TYPE_TEXT;
+
+  lpsink->sink_chains = g_list_append (lpsink->sink_chains, chain);
+  GST_LP_SINK_UNLOCK (lpsink);
+
+  if (block_id && *block_id == 0) {
+    *block_id =
+        gst_pad_add_probe (queue_srcpad, GST_PAD_PROBE_TYPE_BLOCK_DOWNSTREAM,
+        srcpad_blocked_cb, lpsink, NULL);
+    //PENDING_FLAG_SET (lpsink, type);
+  }
+
+  gst_object_unref (queue_srcpad);
+
+  if (reconfigure)
+    gst_lp_sink_reconfigure (lpsink);
+
+done:
+  if (caps)
+    gst_caps_unref (caps);
+}
+
+#if 0
+static void
 pad_added_cb (GstElement * element, GstPad * pad, GstLpSink * lpsink)
 {
   GstElement *queue = NULL;
@@ -653,6 +733,7 @@ pad_added_cb (GstElement * element, GstPad * pad, GstLpSink * lpsink)
   gst_element_set_state (queue, GST_STATE_PAUSED);
 
   queue_sinkpad = gst_element_get_static_pad (queue, "sink");
+
   gst_pad_link_full (pad, queue_sinkpad, GST_PAD_LINK_CHECK_NOTHING);
   gst_object_unref (queue_sinkpad);
 
@@ -689,6 +770,7 @@ pad_added_cb (GstElement * element, GstPad * pad, GstLpSink * lpsink)
   if (reconfigure)
     gst_lp_sink_reconfigure (lpsink);
 }
+#endif
 
 void
 gst_lp_sink_set_all_pads_blocked (GstLpSink * lpsink)
@@ -770,9 +852,8 @@ gst_lp_sink_setup_element (GstLpSink * lpsink, GstElement ** streamid_demux,
 
   demux_sinkpad = gst_element_get_static_pad (*streamid_demux, "sink");
   *ghost_sinkpad = gst_ghost_pad_new (pad_name, demux_sinkpad);
-  pad_added_id =
-      g_signal_connect (G_OBJECT (*streamid_demux), "pad-added",
-      G_CALLBACK (pad_added_cb), lpsink);
+  g_signal_connect (G_OBJECT (demux_sinkpad), "notify::caps",
+      G_CALLBACK (caps_notify_cb_from_demux), lpsink);
 
   gst_element_set_state (*streamid_demux, GST_STATE_PAUSED);
 
@@ -875,12 +956,12 @@ text_set_blocked (GstLpSink * lpsink, gboolean blocked)
 }
 */
 
-static gboolean
+static gint
 _find_next (GstSinkChain * chain, GstPad * blockedpad)
 {
   if (chain->peer_srcpad_queue == blockedpad)
-    return TRUE;
-  return FALSE;
+    return 0;
+  return 1;
 }
 
 static GstPadProbeReturn
@@ -958,6 +1039,40 @@ gst_lp_sink_reconfigure (GstLpSink * lpsink)
   return TRUE;
 }
 
+static gboolean
+gst_lp_sink_unblock_sinkpads (GstLpSink * lpsink)
+{
+  GstPad *opad = NULL;
+
+  if (lpsink->video_pad) {
+    opad =
+        GST_PAD_CAST (gst_proxy_pad_get_internal (GST_PROXY_PAD
+            (lpsink->video_pad)));
+    gst_pad_remove_probe (opad, lpsink->video_block_id);
+    lpsink->video_block_id = 0;
+  }
+
+  if (lpsink->audio_pad) {
+    opad =
+        GST_PAD_CAST (gst_proxy_pad_get_internal (GST_PROXY_PAD
+            (lpsink->audio_pad)));
+    gst_pad_remove_probe (opad, lpsink->audio_block_id);
+    lpsink->audio_block_id = 0;
+  }
+
+  if (lpsink->text_pad) {
+    opad =
+        GST_PAD_CAST (gst_proxy_pad_get_internal (GST_PROXY_PAD
+            (lpsink->text_pad)));
+    gst_pad_remove_probe (opad, lpsink->text_block_id);
+    lpsink->text_block_id = 0;
+  }
+
+  gst_object_unref (opad);
+
+  return TRUE;
+}
+
 /**
  * gst_lp_sink_request_pad
  * @lpsink: a #GstLpSink
@@ -971,6 +1086,7 @@ GstPad *
 gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
 {
   GstPad *res = NULL;
+  gulong *block_id = NULL;
 
   GST_LP_SINK_LOCK (lpsink);
 
@@ -981,6 +1097,7 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
             &lpsink->audio_pad, "audio_sink");
 
       res = lpsink->audio_pad;
+      block_id = &lpsink->audio_block_id;
       break;
     case GST_LP_SINK_TYPE_VIDEO:
       if (!lpsink->video_pad)
@@ -988,6 +1105,7 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
             &lpsink->video_pad, "video_sink");
 
       res = lpsink->video_pad;
+      block_id = &lpsink->video_block_id;
       break;
     case GST_LP_SINK_TYPE_TEXT:
       if (!lpsink->text_pad) {
@@ -1000,6 +1118,7 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
       }
 
       res = lpsink->text_pad;
+      block_id = &lpsink->text_block_id;
       break;
     default:
       res = NULL;
@@ -1010,6 +1129,16 @@ gst_lp_sink_request_pad (GstLpSink * lpsink, GstLpSinkType type)
     gst_pad_set_active (res, TRUE);
     gst_element_add_pad (GST_ELEMENT_CAST (lpsink), res);
 
+    if (block_id && *block_id == 0) {
+      GstPad *blockpad =
+          GST_PAD_CAST (gst_proxy_pad_get_internal (GST_PROXY_PAD (res)));
+
+      *block_id =
+          gst_pad_add_probe (blockpad, GST_PAD_PROBE_TYPE_BLOCK_DOWNSTREAM,
+          NULL, NULL, NULL);
+      //PENDING_FLAG_SET (playsink, type);
+      gst_object_unref (blockpad);
+    }
   }
 
   return res;

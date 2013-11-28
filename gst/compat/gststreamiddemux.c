@@ -43,7 +43,7 @@ GST_DEBUG_CATEGORY_STATIC (streamid_demux_debug);
 enum
 {
   PROP_0,
-  PROP_ACTIVE_SRC_PAD,
+  PROP_ACTIVE_PAD,
   PROP_LAST
 };
 
@@ -80,6 +80,8 @@ static GstPad *gst_streamid_demux_get_srcpad_by_stream_id (GstStreamidDemux *
 static void gst_streamid_demux_srcpad_create (GstStreamidDemux * demux,
     GstPad * pad, const gchar * stream_id);
 static void gst_streamid_demux_reset (GstStreamidDemux * demux);
+static void gst_streamid_demux_release_srcpads (const GValue * item,
+    GstStreamidDemux * demux);
 
 static void
 gst_streamid_demux_class_init (GstStreamidDemuxClass * klass)
@@ -90,8 +92,8 @@ gst_streamid_demux_class_init (GstStreamidDemuxClass * klass)
   gobject_class->get_property = gst_streamid_demux_get_property;
   gobject_class->dispose = gst_streamid_demux_dispose;
 
-  g_object_class_install_property (gobject_class, PROP_ACTIVE_SRC_PAD,
-      g_param_spec_object ("active-src-pad", "Active src pad",
+  g_object_class_install_property (gobject_class, PROP_ACTIVE_PAD,
+      g_param_spec_object ("active-pad", "Active pad",
           "The currently active src pad", GST_TYPE_PAD,
           G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
 
@@ -100,6 +102,7 @@ gst_streamid_demux_class_init (GstStreamidDemuxClass * klass)
       "HoonHee Lee <hoonhee.lee@lge.com>");
   gst_element_class_add_pad_template (gstelement_class,
       gst_static_pad_template_get (&gst_streamid_demux_sink_factory));
+
   gst_element_class_add_pad_template (gstelement_class,
       gst_static_pad_template_get (&gst_streamid_demux_src_factory));
 
@@ -123,7 +126,10 @@ gst_streamid_demux_init (GstStreamidDemux * demux)
   demux->active_srcpad = NULL;
   demux->nb_srcpads = 0;
 
-  demux->stream_id_pairs = NULL;
+  /* initialize hash table for srcpad */
+  demux->stream_id_pairs =
+      g_hash_table_new_full (g_str_hash, g_str_equal, (GDestroyNotify) g_free,
+      (GDestroyNotify) gst_object_unref);
 }
 
 static void
@@ -143,7 +149,7 @@ gst_streamid_demux_get_property (GObject * object, guint prop_id,
   GstStreamidDemux *demux = GST_STREAMID_DEMUX (object);
 
   switch (prop_id) {
-    case PROP_ACTIVE_SRC_PAD:
+    case PROP_ACTIVE_PAD:
       GST_OBJECT_LOCK (demux);
       g_value_set_object (value, demux->active_srcpad);
       GST_OBJECT_UNLOCK (demux);
@@ -170,23 +176,22 @@ gst_streamid_demux_srcpad_create (GstStreamidDemux * demux, GstPad * pad,
 {
   gchar *padname = NULL;
   GstPad *srcpad = NULL;
-
-  if (demux->stream_id_pairs == NULL)
-    demux->stream_id_pairs = g_hash_table_new (g_str_hash, g_str_equal);
+  GstPadTemplate *pad_tmpl = NULL;
 
   padname = g_strdup_printf ("src_%u", demux->nb_srcpads++);
-  srcpad =
-      gst_pad_new_from_template (gst_static_pad_template_get
-      (&gst_streamid_demux_src_factory), padname);
+  pad_tmpl = gst_static_pad_template_get (&gst_streamid_demux_src_factory);
+
+  srcpad = gst_pad_new_from_template (pad_tmpl, padname);
+  gst_object_unref (pad_tmpl);
+  g_free (padname);
 
   GST_OBJECT_LOCK (demux);
-  if (demux->active_srcpad != NULL) {
-    gst_object_unref (demux->active_srcpad);
+  if (demux->active_srcpad != NULL)
     demux->active_srcpad = NULL;
-  }
-  demux->active_srcpad = gst_object_ref (srcpad);
+
+  demux->active_srcpad = srcpad;
   g_hash_table_insert (demux->stream_id_pairs, g_strdup (stream_id),
-      (gpointer) gst_object_ref (srcpad));
+      gst_object_ref (srcpad));
   GST_OBJECT_UNLOCK (demux);
 
   gst_pad_set_active (srcpad, TRUE);
@@ -195,9 +200,6 @@ gst_streamid_demux_srcpad_create (GstStreamidDemux * demux, GstPad * pad,
   gst_pad_sticky_events_foreach (demux->sinkpad, forward_sticky_events, srcpad);
 
   gst_element_add_pad (GST_ELEMENT_CAST (demux), srcpad);
-
-  if (padname)
-    g_free (padname);
 }
 
 static GstFlowReturn
@@ -212,14 +214,15 @@ gst_streamid_demux_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
   GST_LOG_OBJECT (demux, "pushing buffer to %" GST_PTR_FORMAT,
       demux->active_srcpad);
 
+  GST_OBJECT_LOCK (demux);
   if (demux->active_srcpad) {
-    GST_OBJECT_LOCK (demux);
     srcpad = gst_object_ref (demux->active_srcpad);
     GST_OBJECT_UNLOCK (demux);
     res = gst_pad_push (srcpad, buf);
     gst_object_unref (srcpad);
-  } else
-    gst_buffer_unref (buf);
+  } else {
+    GST_OBJECT_UNLOCK (demux);
+  }
 
   GST_LOG_OBJECT (demux, "handled buffer %s", gst_flow_get_name (res));
   return res;
@@ -238,11 +241,11 @@ gst_streamid_demux_get_srcpad_by_stream_id (GstStreamidDemux * demux,
 
   GST_OBJECT_LOCK (demux);
   srcpad = g_hash_table_lookup (demux->stream_id_pairs, stream_id);
-  if (srcpad)
-    gst_object_ref (srcpad);
   GST_OBJECT_UNLOCK (demux);
+
   if (srcpad) {
-    GST_DEBUG_OBJECT (demux, "srcpad = %s matched", gst_pad_get_name (srcpad));
+    GST_DEBUG_OBJECT (demux, "srcpad = %s:%s matched",
+        GST_DEBUG_PAD_NAME (srcpad));
   }
 
 done:
@@ -273,53 +276,40 @@ gst_streamid_demux_event (GstPad * pad, GstObject * parent, GstEvent * event)
       gst_streamid_demux_srcpad_create (demux, pad, stream_id);
     } else if (demux->active_srcpad != active_srcpad) {
       GST_OBJECT_LOCK (demux);
-      if (demux->active_srcpad != NULL) {
-        gst_object_unref (demux->active_srcpad);
+      if (demux->active_srcpad != NULL)
         demux->active_srcpad = NULL;
-      }
       demux->active_srcpad = active_srcpad;
       GST_OBJECT_UNLOCK (demux);
+
+      g_object_notify (G_OBJECT (demux), "active-pad");
     }
   }
 
   if (GST_EVENT_TYPE (event) == GST_EVENT_FLUSH_START
       || GST_EVENT_TYPE (event) == GST_EVENT_FLUSH_STOP
-      || GST_EVENT_TYPE (event) == GST_EVENT_EOS)
+      || GST_EVENT_TYPE (event) == GST_EVENT_EOS) {
     res = gst_pad_event_default (pad, parent, event);
-  else if (demux->active_srcpad) {
+  } else if (demux->active_srcpad) {
+    GstPad *srcpad = NULL;
     GST_OBJECT_LOCK (demux);
-    GstPad *srcpad = gst_object_ref (demux->active_srcpad);
+    srcpad = gst_object_ref (demux->active_srcpad);
     GST_OBJECT_UNLOCK (demux);
     res = gst_pad_push_event (srcpad, event);
     gst_object_unref (srcpad);
-  } else
+  } else {
     gst_event_unref (event);
+  }
 
   return res;
 
   /* ERRORS */
 no_stream_id:
   {
-    GST_ELEMENT_ERROR (demux, STREAM, DEMUX, (NULL), ("no stream_id found"));
+    GST_ELEMENT_ERROR (demux, STREAM, DEMUX,
+        ("Error occured trying to get stream-id to create a srcpad"),
+        ("no stream-id found at %s", GST_EVENT_TYPE_NAME (event)));
     gst_event_unref (event);
     return FALSE;
-  }
-}
-
-static void
-gst_streamid_demux_free_stream_id_pairs (gpointer key, gpointer value,
-    gpointer user_data)
-{
-  gchar *stream_id = (gchar *) key;
-  GstPad *srcpad = (GstPad *) value;
-
-  if (srcpad != NULL) {
-    gst_object_unref (srcpad);
-    srcpad = NULL;
-  }
-
-  if (stream_id) {
-    g_free (stream_id);
   }
 }
 
@@ -339,30 +329,28 @@ static void
 gst_streamid_demux_reset (GstStreamidDemux * demux)
 {
   GstIterator *it = NULL;
+  GstIteratorResult itret = GST_ITERATOR_OK;
+
+  GST_OBJECT_LOCK (demux);
+  if (demux->active_srcpad != NULL)
+    demux->active_srcpad = NULL;
+
+  GST_OBJECT_UNLOCK (demux);
+
+  if (demux->stream_id_pairs != NULL) {
+    g_hash_table_unref (demux->stream_id_pairs);
+    demux->stream_id_pairs = NULL;
+  }
 
   it = gst_element_iterate_src_pads (GST_ELEMENT_CAST (demux));
-  GstIteratorResult itret = GST_ITERATOR_OK;
   while (itret == GST_ITERATOR_OK || itret == GST_ITERATOR_RESYNC) {
     itret =
         gst_iterator_foreach (it,
         (GstIteratorForeachFunction) gst_streamid_demux_release_srcpads, demux);
-    gst_iterator_resync (it);
+    if (itret == GST_ITERATOR_RESYNC)
+      gst_iterator_resync (it);
   }
   gst_iterator_free (it);
-
-  GST_OBJECT_LOCK (demux);
-  if (demux->stream_id_pairs != NULL) {
-    g_hash_table_foreach (demux->stream_id_pairs,
-        gst_streamid_demux_free_stream_id_pairs, NULL);
-    g_hash_table_destroy (demux->stream_id_pairs);
-    demux->stream_id_pairs = NULL;
-  }
-
-  if (demux->active_srcpad != NULL) {
-    gst_object_unref (demux->active_srcpad);
-    demux->active_srcpad = NULL;
-  }
-  GST_OBJECT_UNLOCK (demux);
 }
 
 static GstStateChangeReturn

@@ -51,6 +51,7 @@ enum
   PROP_N_AUDIO,
   PROP_CURRENT_AUDIO,
   PROP_N_TEXT,
+  PROP_TOTAL_STREAMS,
   PROP_LAST
 };
 
@@ -61,6 +62,7 @@ enum
   SIGNAL_AUDIO_TAGS_CHANGED,
   SIGNAL_TEXT_TAGS_CHANGED,
   SIGNAL_ELEMENT_CONFIGURED,
+  SIGNAL_UNBLOCK_SINKPADS,
   LAST_SIGNAL
 };
 
@@ -85,6 +87,7 @@ static gboolean gst_fc_bin_funnel_pad_event (GstPad * pad, GstObject * parent,
     GstEvent * event);
 /*static GstStateChangeReturn gst_fc_bin_change_state (GstElement * element,
     GstStateChange transition);*/
+static gboolean gst_fc_bin_unblock_sinkpads (GstFCBin * fcbin);
 
 static GstStaticPadTemplate gst_fc_bin_sink_pad_template =
 GST_STATIC_PAD_TEMPLATE ("sink%u", GST_PAD_SINK,
@@ -216,6 +219,16 @@ gst_fc_bin_class_init (GstFCBinClass * klass)
           G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
 
   /**
+   * GstFcBin:nb-streams
+   *
+   * Get or set the total number of stremas.
+   */
+  g_object_class_install_property (gobject_klass, PROP_TOTAL_STREAMS,
+      g_param_spec_int ("nb-streams", "Total stremas",
+          "Total number of streams", 0, G_MAXINT, 0,
+          G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+
+  /**
    * GstFCBin::video-tags-changed
    * @fcbin: a #GstFCBin
    * @stream: stream index with changed tags
@@ -286,9 +299,17 @@ gst_fc_bin_class_init (GstFCBinClass * klass)
       g_cclosure_marshal_generic, G_TYPE_NONE, 4, G_TYPE_INT, GST_TYPE_PAD,
       GST_TYPE_PAD, G_TYPE_STRING);
 
+  gst_fc_bin_signals[SIGNAL_UNBLOCK_SINKPADS] =
+      g_signal_new ("unblock-sinkpads", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
+      G_STRUCT_OFFSET (GstFCBinClass, unblock_sinkpads), NULL, NULL,
+      g_cclosure_marshal_generic, G_TYPE_BOOLEAN, 0);
+
   //element_class->change_state = GST_DEBUG_FUNCPTR (gst_fc_bin_change_state);
   element_class->request_new_pad =
       GST_DEBUG_FUNCPTR (gst_fc_bin_request_new_pad);
+
+  klass->unblock_sinkpads = GST_DEBUG_FUNCPTR (gst_fc_bin_unblock_sinkpads);
 
   GST_DEBUG_CATEGORY_INIT (fc_bin_debug, "fcbin", 0, "Flow Controller");
 }
@@ -320,9 +341,18 @@ gst_fc_bin_init (GstFCBin * fcbin)
 
   fcbin->current_video = DEFAULT_CURRENT_VIDEO;
   fcbin->current_audio = DEFAULT_CURRENT_AUDIO;
+
+  fcbin->audio_srcpad = NULL;
+  fcbin->video_srcpad = NULL;
+  fcbin->text_srcpad = NULL;
+
+  fcbin->audio_block_id = 0;
+  fcbin->video_block_id = 0;
+  fcbin->text_block_id = 0;
+
+  fcbin->nb_streams = 0;
+  fcbin->nb_current_stream = 0;
 }
-
-
 
 static void
 gst_fc_bin_finalize (GObject * obj)
@@ -510,6 +540,9 @@ gst_fc_bin_get_property (GObject * object, guint prop_id, GValue * value,
       GST_FC_BIN_UNLOCK (fcbin);
       break;
     }
+    case PROP_TOTAL_STREAMS:
+      g_value_set_int (value, fcbin->nb_streams);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -530,7 +563,6 @@ gst_fc_bin_set_property (GObject * object, guint prop_id,
     case PROP_CURRENT_AUDIO:
       gst_fc_bin_set_current_audio_stream (fcbin, g_value_get_int (value));
       break;
-
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -716,8 +748,8 @@ gst_fc_bin_do_configure (GstFCBin * fcbin, GstPad * ghost_sinkpad,
       }
 
       GST_DEBUG_OBJECT (fcbin, "adding new selector %p", select->selector);
-      gst_bin_add (GST_BIN_CAST (fcbin), select->selector);
       gst_element_set_state (select->selector, GST_STATE_PAUSED);
+      gst_bin_add (GST_BIN_CAST (fcbin), select->selector);
     }
   }
 
@@ -725,15 +757,42 @@ gst_fc_bin_do_configure (GstFCBin * fcbin, GstPad * ghost_sinkpad,
     stream_id = gst_pad_get_stream_id (ghost_sinkpad);
   }
 
-
   if (select->srcpad == NULL) {
     if (select->selector) {
       GstPad *sel_srcpad;
 
       sel_srcpad = gst_element_get_static_pad (select->selector, "src");
       select->srcpad = gst_ghost_pad_new (NULL, sel_srcpad);
+
+      if (type == GST_LP_SINK_TYPE_AUDIO)
+        g_object_set_data (G_OBJECT (select->srcpad), "type",
+            (gpointer) GST_LP_SINK_TYPE_AUDIO);
+      else if (type == GST_LP_SINK_TYPE_VIDEO)
+        g_object_set_data (G_OBJECT (select->srcpad), "type",
+            (gpointer) GST_LP_SINK_TYPE_VIDEO);
+      else if (type == GST_LP_SINK_TYPE_TEXT)
+        g_object_set_data (G_OBJECT (select->srcpad), "type",
+            (gpointer) GST_LP_SINK_TYPE_TEXT);
+
       gst_pad_set_active (select->srcpad, TRUE);
       gst_element_add_pad (GST_ELEMENT (fcbin), select->srcpad);
+
+      if (type == GST_LP_SINK_TYPE_AUDIO) {
+        fcbin->audio_srcpad = select->srcpad;
+        fcbin->audio_block_id =
+            gst_pad_add_probe (select->srcpad,
+            GST_PAD_PROBE_TYPE_BLOCK_DOWNSTREAM, NULL, NULL, NULL);
+      } else if (type == GST_LP_SINK_TYPE_VIDEO) {
+        fcbin->video_srcpad = select->srcpad;
+        fcbin->video_block_id =
+            gst_pad_add_probe (select->srcpad,
+            GST_PAD_PROBE_TYPE_BLOCK_DOWNSTREAM, NULL, NULL, NULL);
+      } else if (type == GST_LP_SINK_TYPE_TEXT) {
+        fcbin->text_srcpad = select->srcpad;
+        fcbin->text_block_id =
+            gst_pad_add_probe (select->srcpad,
+            GST_PAD_PROBE_TYPE_BLOCK_DOWNSTREAM, NULL, NULL, NULL);
+      }
     }
   }
   if (select->selector) {
@@ -763,15 +822,31 @@ gst_fc_bin_do_configure (GstFCBin * fcbin, GstPad * ghost_sinkpad,
       }
 
       gst_ghost_pad_set_target (GST_GHOST_PAD_CAST (ghost_sinkpad), sinkpad);
-      //gst_pad_set_active (ghost_sinkpad, TRUE);
-      //gst_element_add_pad (element, ghost_sinkpad);
       g_object_set_data (G_OBJECT (ghost_sinkpad), "fcbin.srcpad",
           select->srcpad);
 
-      if (stream_id)
-        g_signal_emit (G_OBJECT (fcbin),
-            gst_fc_bin_signals[SIGNAL_ELEMENT_CONFIGURED], 0, type, sinkpad,
-            select->srcpad, stream_id);
+      g_signal_emit (G_OBJECT (fcbin),
+          gst_fc_bin_signals[SIGNAL_ELEMENT_CONFIGURED], 0, type, sinkpad,
+          select->srcpad, stream_id);
+
+      fcbin->nb_current_stream++;
+
+      if (fcbin->nb_streams != -1
+          && fcbin->nb_streams == fcbin->nb_current_stream) {
+        if (fcbin->video_srcpad) {
+          gst_pad_remove_probe (fcbin->video_srcpad, fcbin->video_block_id);
+          fcbin->video_block_id = 0;
+        }
+        if (fcbin->audio_srcpad) {
+          gst_pad_remove_probe (fcbin->audio_srcpad, fcbin->audio_block_id);
+          fcbin->audio_block_id = 0;
+        }
+        if (fcbin->text_srcpad) {
+          gst_pad_remove_probe (fcbin->text_srcpad, fcbin->text_block_id);
+          fcbin->text_block_id = 0;
+        }
+        gst_element_no_more_pads (GST_ELEMENT (fcbin));
+      }
 
       g_ptr_array_add (select->channels, sinkpad);
     }
@@ -840,6 +915,7 @@ gst_fc_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
   GstPad *ghost_sinkpad = NULL;
   const GstStructure *s;
   const gchar *in_name;
+  gulong block_id;
 
   fcbin = GST_FC_BIN (element);
 
@@ -852,6 +928,11 @@ gst_fc_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
 
   gst_pad_set_active (ghost_sinkpad, TRUE);
   gst_element_add_pad (GST_ELEMENT_CAST (fcbin), ghost_sinkpad);
+
+  block_id =
+      gst_pad_add_probe (ghost_sinkpad, GST_PAD_PROBE_TYPE_BLOCK_DOWNSTREAM,
+      NULL, NULL, NULL);
+  g_object_set_data (G_OBJECT (ghost_sinkpad), "block_id", (gpointer) block_id);
 
   return ghost_sinkpad;
 }
@@ -930,6 +1011,37 @@ array_has_value (const gchar * values[], const gchar * value)
       return TRUE;
   }
   return FALSE;
+}
+
+static void
+unblock_pads (const GValue * item, GstFCBin * fcbin)
+{
+  GstPad *pad = g_value_get_object (item);
+  gulong block_id;
+
+  GST_DEBUG_OBJECT (fcbin, "Unblock pad %s:%s", GST_DEBUG_PAD_NAME (pad));
+  if ((block_id = (guintptr) g_object_get_data (G_OBJECT (pad), "block_id"))) {
+    gst_pad_remove_probe (pad, block_id);
+    g_object_set_data (G_OBJECT (pad), "block_id", 0);
+  }
+  fcbin->nb_streams++;
+}
+
+static gboolean
+gst_fc_bin_unblock_sinkpads (GstFCBin * fcbin)
+{
+  GstIterator *it = gst_element_iterate_sink_pads (GST_ELEMENT (fcbin));
+  GstIteratorResult itret = GST_ITERATOR_OK;
+
+  while (itret == GST_ITERATOR_OK || itret == GST_ITERATOR_RESYNC) {
+    itret =
+        gst_iterator_foreach (it, (GstIteratorForeachFunction) unblock_pads,
+        fcbin);
+    gst_iterator_resync (it);
+  }
+  gst_iterator_free (it);
+
+  return TRUE;
 }
 
 /*

@@ -102,6 +102,7 @@ struct _GstLpSinkClass
 {
   GstBinClass parent_class;
   void (*pad_blocked) (GstLpSink * lpsink, gchar * steram_id, gboolean blocked);
+  gboolean *(*unblock_sinkpads) (GstLpSink * lpsink);
 };
 
 typedef enum
@@ -126,6 +127,7 @@ struct _GstSinkChain
   gulong block_id;
   GstPad *peer_srcpad_queue;
   gboolean peer_srcpad_blocked;
+  GstCaps *caps;
 };
 
 struct _GstAVSinkChain
