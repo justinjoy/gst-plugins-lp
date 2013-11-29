@@ -655,10 +655,9 @@ gst_lp_bin_init (GstLpBin * lpbin)
   g_mutex_init (&lpbin->elements_lock);
 
   /* add sink */
-  lpbin->lpsink = g_object_new (GST_TYPE_LP_SINK, NULL);
-  gst_bin_add (GST_BIN_CAST (lpbin), GST_ELEMENT_CAST (lpbin->lpsink));
   lpbin->uridecodebin = NULL;
   lpbin->fcbin = NULL;
+  lpbin->lpsink = NULL;
   lpbin->source = NULL;
 
   lpbin->naudio = 0;
@@ -1420,6 +1419,8 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
   g_signal_connect (lpbin->fcbin, "element-configured",
       G_CALLBACK (element_configured_cb), lpbin);
 
+  lpbin->lpsink = gst_element_factory_make ("lpsink", NULL);
+
   /* 
    * FIXME: These are not compatible with multi-sink support.
    */
@@ -1431,6 +1432,8 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
   }
 
   g_object_set (lpbin->lpsink, "audio-resource", lpbin->audio_resource, NULL);
+
+  gst_bin_add (GST_BIN_CAST (lpbin), lpbin->lpsink);
 
 
   g_object_unref (fd_caps);
@@ -1581,6 +1584,9 @@ static GstElement *
 gst_lp_bin_get_current_sink (GstLpBin * lpbin, GstElement ** elem,
     const gchar * dbg, GstLpSinkType type)
 {
+
+  g_return_val_if_fail ((lpbin->lpsink != NULL), NULL);
+
   GstElement *sink = gst_lp_sink_get_sink (lpbin->lpsink, type);
 
   GST_LOG_OBJECT (lpbin, "play_sink_get_sink() returned %s sink %"
