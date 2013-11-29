@@ -1474,13 +1474,10 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
   g_signal_connect (lpbin->fcbin, "element-configured",
       G_CALLBACK (element_configured_cb), lpbin);
 
-<<<<<<< HEAD
   lpbin->lpsink = gst_element_factory_make ("lpsink", NULL);
-=======
   lpbin->pad_blocked_id =
       g_signal_connect (lpbin->lpsink, "pad-blocked",
       G_CALLBACK (pad_blocked_cb), lpbin);
->>>>>>> lpbin: check counting all of streams and handle blocked pads
 
   /* 
    * FIXME: These are not compatible with multi-sink support.
