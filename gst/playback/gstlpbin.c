@@ -159,6 +159,8 @@ static void gst_lp_bin_set_thumbnail_mode (GstLpBin * lpbin,
     gboolean thumbnail_mode);
 static void gst_lp_bin_set_interleaving_type (GstLpBin * lpbin,
     gint interleaving_type);
+static void gst_lp_bin_element_added_cb (GstBin * lpbin, GstElement * element,
+    gpointer user_data);
 static void gst_lp_bin_set_property_table (GstLpBin * lpbin, gchar * maps);
 static void gst_lp_bin_do_property_set (GstLpBin * lpbin, GstElement * element);
 
@@ -647,6 +649,10 @@ gst_lp_bin_init (GstLpBin * lpbin)
         lpbin);
     gst_object_unref (lpbin->bus);
   }
+
+  lpbin->element_added_id =
+      g_signal_connect (lpbin, "element-added",
+      G_CALLBACK (gst_lp_bin_element_added_cb), lpbin);
 
   lpbin->video_channels = g_ptr_array_new ();
   lpbin->audio_channels = g_ptr_array_new ();
@@ -1397,9 +1403,6 @@ notify_source_cb (GstElement * decodebin, GParamSpec * pspec, GstLpBin * lpbin)
 
   g_object_get (lpbin->uridecodebin, "source", &source, NULL);
 
-  if (lpbin->property_pairs)
-    gst_lp_bin_do_property_set (lpbin, source);
-
   GST_OBJECT_LOCK (lpbin);
   if ((lpbin->source != NULL) && (GST_IS_ELEMENT (lpbin->source))) {
     gst_object_unref (GST_OBJECT (lpbin->source));
@@ -1617,6 +1620,7 @@ gst_lp_bin_deactive (GstLpBin * lpbin)
   REMOVE_SIGNAL (lpbin, lpbin->video_tags_changed_id);
   REMOVE_SIGNAL (lpbin, lpbin->text_tags_changed_id);
   REMOVE_SIGNAL (lpbin, lpbin->pad_blocked_id);
+  REMOVE_SIGNAL (lpbin, lpbin->element_added_id);
   REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->fcbin_pad_added_id);
   REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->fcbin_no_more_pads_id);
   if (lpbin->uridecodebin) {
@@ -1715,24 +1719,43 @@ gst_lp_bin_get_current_sink (GstLpBin * lpbin, GstElement ** elem,
   return sink;
 }
 
+static void
+gst_lp_bin_element_added_cb (GstBin * bin, GstElement * element,
+    gpointer user_data)
+{
+  GstState state;
+  GstElementFactory *factory = NULL;
+  const gchar *klass = NULL;
+  gchar *elem_name = NULL;
+  GstLpBin *lpbin = (GstLpBin *) user_data;
+
+  factory = gst_element_get_factory (element);
+  klass = gst_element_factory_get_klass (factory);
+  elem_name = gst_element_get_name (element);
+  state = GST_STATE (element);
+
+  if (g_strrstr (klass, "Bin"))
+    g_signal_connect (element, "element-added",
+        G_CALLBACK (gst_lp_bin_element_added_cb), lpbin);
+
+  GST_INFO_OBJECT (GST_ELEMENT_CAST (lpbin), "%s element added, (state = %d)",
+      elem_name, state);
+
+  if (lpbin->property_pairs)
+    gst_lp_bin_do_property_set (lpbin, element);
+
+  g_free (elem_name);
+}
+
 static gboolean
 autoplug_continue_signal (GstElement * element, GstPad * pad, GstCaps * caps,
     GstLpBin * lpbin)
 {
   GstPad *opad = NULL;
   GstElement *elem = NULL;
-
-  if (lpbin->property_pairs) {
-    opad = gst_ghost_pad_get_target (GST_GHOST_PAD_CAST (pad));
-    if (opad) {
-      elem = gst_pad_get_parent (opad);
-      if (elem)
-        gst_lp_bin_do_property_set (lpbin, elem);
-    }
-  }
-  GST_LOG_OBJECT (lpbin, "autoplug_continue_notify");
-
   gboolean result;
+
+  GST_LOG_OBJECT (lpbin, "autoplug_continue_notify");
 
   g_signal_emit (lpbin,
       gst_lp_bin_signals[SIGNAL_AUTOPLUG_CONTINUE], 0, pad, caps, &result);

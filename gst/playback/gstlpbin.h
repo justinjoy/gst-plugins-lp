@@ -77,6 +77,7 @@ struct _GstLpBin
   gulong pad_blocked_id;
   gulong fcbin_pad_added_id;
   gulong fcbin_no_more_pads_id;
+  gulong element_added_id;
 
   guint naudio;
   guint nvideo;
