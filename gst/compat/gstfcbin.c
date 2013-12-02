@@ -1023,8 +1023,8 @@ unblock_pads (const GValue * item, GstFCBin * fcbin)
   if ((block_id = (guintptr) g_object_get_data (G_OBJECT (pad), "block_id"))) {
     gst_pad_remove_probe (pad, block_id);
     g_object_set_data (G_OBJECT (pad), "block_id", 0);
+    fcbin->nb_streams++;
   }
-  fcbin->nb_streams++;
 }
 
 static gboolean
