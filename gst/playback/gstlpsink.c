@@ -971,6 +971,7 @@ srcpad_blocked_cb (GstPad * blockedpad, GstPadProbeInfo * info,
   GstLpSink *lpsink = (GstLpSink *) user_data;
   GList *find;
   GstSinkChain *chain;
+  gchar *stream_id = NULL;
 
   GST_LP_SINK_LOCK (lpsink);
 
@@ -978,15 +979,11 @@ srcpad_blocked_cb (GstPad * blockedpad, GstPadProbeInfo * info,
               blockedpad, (GCompareFunc) _find_next))) {
     const gchar *pad_type = NULL;
     gchar *pad_name = NULL;
-    gchar *stream_id = NULL;
 
     chain = (GstSinkChain *) find->data;
     chain->peer_srcpad_blocked = TRUE;
 
     stream_id = gst_pad_get_stream_id (blockedpad);
-    g_signal_emit (G_OBJECT (lpsink),
-        gst_lp_sink_signals[SIGNAL_PAD_BLOCKED], 0, stream_id, TRUE);
-    g_free (stream_id);
 
     if (chain->type == GST_LP_SINK_TYPE_VIDEO)
       pad_type = "video";
@@ -996,8 +993,8 @@ srcpad_blocked_cb (GstPad * blockedpad, GstPadProbeInfo * info,
       pad_type = "text";
 
     pad_name = gst_pad_get_name (blockedpad);
-
     GST_DEBUG_OBJECT (blockedpad, "%s pad(%s) blocked", pad_type, pad_name);
+
     g_free (pad_name);
   }
 
@@ -1019,6 +1016,11 @@ srcpad_blocked_cb (GstPad * blockedpad, GstPadProbeInfo * info,
     stream_set_blocked (lpsink, FALSE, GST_LP_SINK_TYPE_TEXT);
   }
 */
+  if (stream_id) {
+    g_signal_emit (G_OBJECT (lpsink),
+        gst_lp_sink_signals[SIGNAL_PAD_BLOCKED], 0, stream_id, TRUE);
+    g_free (stream_id);
+  }
 
   GST_LP_SINK_UNLOCK (lpsink);
 
