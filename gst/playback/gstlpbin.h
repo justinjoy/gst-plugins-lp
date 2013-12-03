@@ -71,7 +71,6 @@ struct _GstLpBin
   gulong unknown_type_id;
   gulong autoplug_factories_id;
   gulong autoplug_continue_id;
-  gulong caps_video_id;
   gulong audio_tags_changed_id;
   gulong video_tags_changed_id;
   gulong text_tags_changed_id;
@@ -157,9 +156,6 @@ struct _GstLpBinClass
   GstPad *(*get_video_pad) (GstLpBin * lpbin, gint stream);
   GstPad *(*get_audio_pad) (GstLpBin * lpbin, gint stream);
   GstPad *(*get_text_pad) (GstLpBin * lpbin, gint stream);
-
-  /* get the caps of video sink element's sinkpad */
-  GstStructure *(*caps_video) (GstLpBin * lpbin);
 };
 
 enum

@@ -41,6 +41,7 @@ G_BEGIN_DECLS
     "video/x-flash-video;" \
     "video/x-raw;" \
     "image/jpeg"
+
 #define FD_AUDIO_CAPS \
     "audio/mpeg;"\
     "audio/x-dts;" \

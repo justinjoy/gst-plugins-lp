@@ -68,7 +68,6 @@ enum
   SIGNAL_SOURCE_SETUP,
   SIGNAL_AUTOPLUG_CONTINUE,
   SIGNAL_AUTOPLUG_FACTORIES,
-  SIGNAL_CAPS_VIDEO,
   SIGNAL_VIDEO_TAGS_CHANGED,
   SIGNAL_AUDIO_TAGS_CHANGED,
   SIGNAL_TEXT_TAGS_CHANGED,
@@ -157,7 +156,6 @@ static void gst_lp_bin_set_thumbnail_mode (GstLpBin * lpbin,
     gboolean thumbnail_mode);
 static void gst_lp_bin_set_interleaving_type (GstLpBin * lpbin,
     gint interleaving_type);
-static GstStructure *gst_lp_bin_caps_video (GstLpBin * lpbin);
 static void gst_lp_bin_set_property_table (GstLpBin * lpbin, gchar * maps);
 static void gst_lp_bin_do_property_set (GstLpBin * lpbin, GstElement * element);
 
@@ -228,7 +226,7 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
   gst_element_class_set_static_metadata (gstelement_klass,
       "Lightweight Play Bin", "Lightweight/Bin/Player",
       "Autoplug and play media for Restricted systems",
-      "Justin Joy <justin.joy.9to5@gmail.com>");
+      "Jeongseok Kim <jeongseok.kim@lge.com>");
 
   g_object_class_install_property (gobject_klass, PROP_URI,
       g_param_spec_string ("uri", "URI", "URI of the media to play",
@@ -393,12 +391,6 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
           autoplug_factories), _gst_array_accumulator, NULL,
       g_cclosure_marshal_generic, G_TYPE_VALUE_ARRAY, 2,
       GST_TYPE_PAD, GST_TYPE_CAPS);
-
-  gst_lp_bin_signals[SIGNAL_CAPS_VIDEO] =
-      g_signal_new ("caps-video", G_TYPE_FROM_CLASS (klass),
-      G_SIGNAL_RUN_LAST, G_STRUCT_OFFSET (GstLpBinClass,
-          caps_video), NULL, NULL,
-      g_cclosure_marshal_generic, GST_TYPE_STRUCTURE, 0, G_TYPE_NONE);
 
   /**
    * GstLpBin::video-tags-changed
@@ -571,7 +563,6 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
   klass->autoplug_continue = GST_DEBUG_FUNCPTR (gst_lp_bin_autoplug_continue);
   klass->autoplug_factories = GST_DEBUG_FUNCPTR (gst_lp_bin_autoplug_factories);
   klass->retrieve_thumbnail = GST_DEBUG_FUNCPTR (gst_lp_bin_retrieve_thumbnail);
-  klass->caps_video = GST_DEBUG_FUNCPTR (gst_lp_bin_caps_video);
   klass->get_video_tags = gst_lp_bin_get_video_tags;
   klass->get_audio_tags = gst_lp_bin_get_audio_tags;
   klass->get_text_tags = gst_lp_bin_get_text_tags;
@@ -648,10 +639,6 @@ gst_lp_bin_init (GstLpBin * lpbin)
         lpbin);
     gst_object_unref (lpbin->bus);
   }
-
-  lpbin->caps_video_id =
-      g_signal_connect (lpbin, "caps-video", G_CALLBACK (gst_lp_bin_caps_video),
-      lpbin);
 
   lpbin->video_channels = g_ptr_array_new ();
   lpbin->audio_channels = g_ptr_array_new ();
@@ -1611,7 +1598,6 @@ gst_lp_bin_deactive (GstLpBin * lpbin)
   REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->unknown_type_id);
   REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->autoplug_factories_id);
   REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->autoplug_continue_id);
-  REMOVE_SIGNAL (lpbin, lpbin->caps_video_id);
   REMOVE_SIGNAL (lpbin, lpbin->audio_tags_changed_id);
   REMOVE_SIGNAL (lpbin, lpbin->video_tags_changed_id);
   REMOVE_SIGNAL (lpbin, lpbin->text_tags_changed_id);
@@ -2051,34 +2037,6 @@ gst_lp_bin_autoplug_factories (GstElement * element, GstPad * pad,
   }
   gst_plugin_feature_list_free (mylist);
 
-  return result;
-}
-
-static GstStructure *
-gst_lp_bin_caps_video (GstLpBin * lpbin)
-{
-  GstStructure *result = NULL;
-  GstCaps *caps = NULL;
-
-  //TODO At future, video_sink will be used instead of video_pad.
-  if (!lpbin->video_pad)
-    goto end;
-
-  caps = gst_pad_get_current_caps (lpbin->video_pad);
-
-  if (!caps) {
-    GST_WARNING_OBJECT (lpbin, "video pad caps is not exist");
-    goto end;
-  }
-  GST_DEBUG_OBJECT (lpbin, "video pad caps are %" GST_PTR_FORMAT, caps);
-
-  result = gst_caps_get_structure (caps, 0);
-  GST_DEBUG_OBJECT (lpbin, "video pad caps structure is %" GST_PTR_FORMAT,
-      result);
-
-  gst_caps_unref (caps);
-
-end:
   return result;
 }
 
