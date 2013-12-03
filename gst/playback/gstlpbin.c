@@ -560,7 +560,7 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
   gst_lp_bin_signals[SIGNAL_GET_TEXT_PAD] =
       g_signal_new ("get-text-pad", G_TYPE_FROM_CLASS (klass),
       G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
-      G_STRUCT_OFFSET (GstLpBinClass, get_audio_pad), NULL, NULL,
+      G_STRUCT_OFFSET (GstLpBinClass, get_text_pad), NULL, NULL,
       g_cclosure_marshal_generic, GST_TYPE_PAD, 1, G_TYPE_INT);
 
   gstelement_klass->change_state = GST_DEBUG_FUNCPTR (gst_lp_bin_change_state);
