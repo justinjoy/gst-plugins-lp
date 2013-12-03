@@ -58,6 +58,7 @@ enum
   PROP_BUFFER_SIZE,
   PROP_BUFFER_DURATION,
   PROP_INTERLEAVING_TYPE,
+  PROP_USE_RESOURCE_MANAGER,
   PROP_LAST
 };
 
@@ -84,6 +85,8 @@ enum
 #define DEFAULT_USE_BUFFERING FALSE
 #define DEFAULT_BUFFER_DURATION   -1
 #define DEFAULT_BUFFER_SIZE       -1
+
+#define DEFAULT_USE_RESOURCE_MANAGER FALSE
 
 /* GstObject overriding */
 static void gst_lp_bin_class_init (GstLpBinClass * klass);
@@ -327,6 +330,11 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
       g_param_spec_uint ("audio-resource", "Acquired audio resource",
           "Acquired audio resource.(the most significant bit - 0: ADEC, 1: MIX / the remains - channel number)",
           0, G_MAXUINT, 0, G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property (gobject_klass, PROP_USE_RESOURCE_MANAGER,
+      g_param_spec_boolean ("use-resource-manager", "Use Resource Manager",
+          "Enable a feature working with resource manager", FALSE,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   /**
    * GstLpBin::smart-properties:
@@ -665,6 +673,7 @@ gst_lp_bin_init (GstLpBin * lpbin)
 
   lpbin->thumbnail_mode = DEFAULT_THUMBNAIL_MODE;
   lpbin->use_buffering = DEFAULT_USE_BUFFERING;
+  lpbin->use_resource_manager = DEFAULT_USE_RESOURCE_MANAGER;
 
   lpbin->video_resource = 0;
   lpbin->audio_resource = 0;
@@ -1067,6 +1076,9 @@ gst_lp_bin_set_property (GObject * object, guint prop_id,
       GST_DEBUG_OBJECT (lpbin, "setting audio resource [%x]",
           lpbin->audio_resource);
       break;
+    case PROP_USE_RESOURCE_MANAGER:
+      lpbin->use_resource_manager = g_value_get_boolean (value);
+      break;
     case PROP_SMART_PROPERTIES:
       gst_lp_bin_set_property_table (lpbin, g_value_get_string (value));
       break;
@@ -1193,6 +1205,9 @@ gst_lp_bin_get_property (GObject * object, guint prop_id, GValue * value,
       break;
     case PROP_INTERLEAVING_TYPE:
       g_value_set_int (value, lpbin->interleaving_type);
+      break;
+    case PROP_USE_RESOURCE_MANAGER:
+      g_value_set_boolean (value, lpbin->use_resource_manager);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);

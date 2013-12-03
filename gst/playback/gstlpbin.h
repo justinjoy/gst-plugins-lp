@@ -95,6 +95,7 @@ struct _GstLpBin
 
   gboolean thumbnail_mode;
   gboolean use_buffering;
+  gboolean use_resource_manager;
 
   guint video_resource;
   guint audio_resource;
