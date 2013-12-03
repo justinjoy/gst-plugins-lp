@@ -49,7 +49,9 @@ struct _GstLpSink
 
   GstAVSinkChain *avchain;
 
-  GList *sink_chains;
+  GList *video_chains;
+  GList *audio_chains;
+  GList *text_chains;
 
   GstElement *video_streamid_demux;
   GstElement *audio_streamid_demux;
@@ -61,10 +63,6 @@ struct _GstLpSink
   GstPad *audio_pad;
   GstPad *video_pad;
   GstPad *text_pad;
-
-  gulong audio_pad_added_id;
-  gulong video_pad_added_id;
-  gulong text_pad_added_id;
 
   gulong audio_block_id;
   gulong video_block_id;
@@ -86,7 +84,6 @@ struct _GstLpSink
   gboolean video_multiple_stream;
   gboolean audio_multiple_stream;
 
-  GList *sink_chain_list;
   guint nb_video_bin;
   guint nb_audio_bin;
   guint nb_text_bin;
@@ -94,8 +91,6 @@ struct _GstLpSink
   gboolean audio_only;
   gboolean need_async_start;
   gboolean async_pending;
-
-  gboolean enable_avsink;
 };
 
 struct _GstLpSinkClass
@@ -128,6 +123,7 @@ struct _GstSinkChain
   GstPad *peer_srcpad_queue;
   gboolean peer_srcpad_blocked;
   GstCaps *caps;
+
 };
 
 struct _GstAVSinkChain
@@ -143,6 +139,12 @@ struct _GstAVSinkChain
 
   gulong video_block_id;
   gulong audio_block_id;
+  GstPad *video_peer_srcpad_queue;
+  GstPad *audio_peer_srcpad_queue;
+  gboolean video_peer_srcpad_blocked;
+  gboolean audio_peer_srcpad_blocked;
+  GstCaps *video_caps;
+  GstCaps *audio_caps;
 };
 
 GType gst_lp_sink_get_type (void);
