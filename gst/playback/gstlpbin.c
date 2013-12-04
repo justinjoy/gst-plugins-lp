@@ -1,6 +1,8 @@
 /* GStreamer Lightweight Playback Plugins
  * Copyright (C) 2013 LG Electronics.
- *	Author : Justin Joy <justin.joy.9to5@gmail.com> 
+ *	Author : Jeongseok Kim <jeongseok.kim@lge.com>
+ *               Wonchul Lee <wonchul86.lee@lge.com>
+ *               HoonHee Lee <hoonhee.lee@lge.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -78,6 +80,7 @@ enum
   SIGNAL_GET_VIDEO_PAD,
   SIGNAL_GET_AUDIO_PAD,
   SIGNAL_GET_TEXT_PAD,
+  SIGNAL_STREAMS_READY,
   LAST_SIGNAL
 };
 
@@ -565,6 +568,12 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
       G_STRUCT_OFFSET (GstLpBinClass, get_text_pad), NULL, NULL,
       g_cclosure_marshal_generic, GST_TYPE_PAD, 1, G_TYPE_INT);
 
+  gst_lp_bin_signals[SIGNAL_STREAMS_READY] =
+      g_signal_new ("streams-ready", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST, 0, NULL, NULL,
+      g_cclosure_marshal_generic, G_TYPE_NONE, 3,
+      G_TYPE_VALUE_ARRAY, G_TYPE_VALUE_ARRAY, G_TYPE_VALUE_ARRAY);
+
   gstelement_klass->change_state = GST_DEBUG_FUNCPTR (gst_lp_bin_change_state);
   gstelement_klass->query = GST_DEBUG_FUNCPTR (gst_lp_bin_query);
 
@@ -573,12 +582,13 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
   klass->autoplug_continue = GST_DEBUG_FUNCPTR (gst_lp_bin_autoplug_continue);
   klass->autoplug_factories = GST_DEBUG_FUNCPTR (gst_lp_bin_autoplug_factories);
   klass->retrieve_thumbnail = GST_DEBUG_FUNCPTR (gst_lp_bin_retrieve_thumbnail);
-  klass->get_video_tags = gst_lp_bin_get_video_tags;
-  klass->get_audio_tags = gst_lp_bin_get_audio_tags;
-  klass->get_text_tags = gst_lp_bin_get_text_tags;
-  klass->get_video_pad = gst_lp_bin_get_video_pad;
-  klass->get_audio_pad = gst_lp_bin_get_audio_pad;
-  klass->get_text_pad = gst_lp_bin_get_text_pad;
+
+  klass->get_video_tags = GST_DEBUG_FUNCPTR (gst_lp_bin_get_video_tags);
+  klass->get_audio_tags = GST_DEBUG_FUNCPTR (gst_lp_bin_get_audio_tags);
+  klass->get_text_tags = GST_DEBUG_FUNCPTR (gst_lp_bin_get_text_tags);
+  klass->get_video_pad = GST_DEBUG_FUNCPTR (gst_lp_bin_get_video_pad);
+  klass->get_audio_pad = GST_DEBUG_FUNCPTR (gst_lp_bin_get_audio_pad);
+  klass->get_text_pad = GST_DEBUG_FUNCPTR (gst_lp_bin_get_text_pad);
 }
 
 static gboolean
@@ -1202,13 +1212,98 @@ pad_added_cb_from_fcbin (GstElement * fcbin, GstPad * pad, GstLpBin * lpbin)
 static void
 no_more_pads_cb_from_fcbin (GstElement * fcbin, GstLpBin * lpbin)
 {
-  GST_INFO_OBJECT (lpbin, "no more pads callback from fcbin");
-  GST_INFO_OBJECT (lpbin, "no more pads callback from fcbin");
+  GValueArray *video_caps = g_value_array_new (0);
+  GValueArray *audio_caps = g_value_array_new (0);
+  GValueArray *text_caps = g_value_array_new (0);
+  gint n_video = 0;
+  gint n_audio = 0;
+  gint n_text = 0;
+  GstIterator *it = NULL;
+  gboolean ret = FALSE;
+  gboolean it_done = FALSE;
+  GValue item = { 0, };
 
-  if (lpbin->lpsink) {
-    gboolean ret = FALSE;
-    g_signal_emit_by_name (lpbin->lpsink, "unblock-sinkpads", &ret, NULL);
+  if (!lpbin->lpsink)
+    goto no_lpsink;
+
+  g_signal_emit_by_name (lpbin->lpsink, "unblock-sinkpads", &ret, NULL);
+  GST_LOG_OBJECT (lpbin, "received unblock-sinkpads result=%d", ret);
+
+  if (!lpbin->fcbin)
+    goto no_fcbin;
+
+  g_object_get (lpbin->fcbin, "n-video", &n_video, NULL);
+  g_object_get (lpbin->fcbin, "n-audio", &n_audio, NULL);
+  g_object_get (lpbin->fcbin, "n-text", &n_text, NULL);
+
+  GST_DEBUG_OBJECT (lpbin,
+      "building caps for streams-ready signal, v=%d, a=%d, t=%d", n_video,
+      n_audio, n_text);
+
+  it = gst_element_iterate_sink_pads (lpbin->fcbin);
+  if (!it)
+    goto done;
+
+  while (!it_done) {
+    GstPad *sinkpad = NULL;
+    GstCaps *caps = NULL;
+    gchar *caps_str = NULL;
+    GValue val = { 0, };
+    switch (gst_iterator_next (it, &item)) {
+      case GST_ITERATOR_OK:
+        sinkpad = g_value_get_object (&item);
+        caps = gst_pad_get_current_caps (sinkpad);
+        caps_str = gst_caps_to_string (caps);
+
+        g_value_init (&val, G_TYPE_OBJECT);
+        g_value_set_object (&val, caps);
+
+        if (g_str_has_prefix (caps_str, "video")
+            || g_str_has_prefix (caps_str, "image")) {
+          video_caps = g_value_array_append (video_caps, &val);
+        } else if (g_str_has_prefix (caps_str, "audio")) {
+          audio_caps = g_value_array_append (audio_caps, &val);
+        } else if (g_str_has_prefix (caps_str, "text/")
+            || g_str_has_prefix (caps_str, "application/")
+            || g_str_has_prefix (caps_str, "subpicture/")) {
+          text_caps = g_value_array_append (text_caps, &val);
+        }
+
+        g_value_reset (&item);
+        g_free (caps_str);
+        break;
+      case GST_ITERATOR_DONE:
+        GST_DEBUG_OBJECT (lpbin->fcbin, "finished sinkpad iteration");
+        it_done = TRUE;
+        break;
+      case GST_ITERATOR_ERROR:
+        GST_WARNING_OBJECT (lpbin->fcbin, "aborted sinkpad iteration");
+        it_done = TRUE;
+        break;
+    }
+    g_value_unset (&val);
   }
+
+  g_value_unset (&item);
+  gst_iterator_free (it);
+
+  g_assert (n_video == video_caps->n_values);
+  g_assert (n_audio == audio_caps->n_values);
+  g_assert (n_text == text_caps->n_values);
+
+done:
+  g_signal_emit_by_name (lpbin, "streams-ready", &video_caps, &audio_caps,
+      &text_caps, NULL);
+  return;
+
+no_lpsink:
+  GST_ERROR_OBJECT (lpbin, "*CANNOT* detect lpsink, check object lifecycle");
+  goto done;
+
+no_fcbin:
+  GST_ERROR_OBJECT (lpbin, "*CANNOT* detect fcbin, check object lifecycle");
+  goto done;
+
 }
 
 static void
@@ -1403,6 +1498,7 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
   lpbin->audio_tags_changed_id =
       g_signal_connect (lpbin->fcbin, "audio-tags-changed",
       G_CALLBACK (audio_tags_changed_cb), lpbin);
+
   lpbin->video_tags_changed_id =
       g_signal_connect (lpbin->fcbin, "video-tags-changed",
       G_CALLBACK (video_tags_changed_cb), lpbin);

@@ -825,6 +825,7 @@ gst_fc_bin_do_configure (GstFCBin * fcbin, GstPad * ghost_sinkpad,
           select->srcpad, stream_id);
 
       fcbin->nb_current_stream++;
+      g_ptr_array_add (select->channels, sinkpad);
 
       if (fcbin->nb_streams != -1
           && fcbin->nb_streams == fcbin->nb_current_stream) {
@@ -844,8 +845,6 @@ gst_fc_bin_do_configure (GstFCBin * fcbin, GstPad * ghost_sinkpad,
           fcbin->text_block_id = 0;
         }
       }
-
-      g_ptr_array_add (select->channels, sinkpad);
     }
     g_free (pad_name);
   }
