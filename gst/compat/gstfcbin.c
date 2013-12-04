@@ -1,7 +1,8 @@
 /* GStreamer Lightweight Playback Plugins
  * Copyright (C) 2013 LG Electronics.
- *	Author : Justin Joy <justin.joy.9to5@gmail.com> 
- *	         Wonchul Lee <wonchul86.lee@lge.com> 
+ *	Author : Jeongseok Kim <jeongseok.kim@lge.com>
+ *	         Wonchul Lee <wonchul86.lee@lge.com>
+ *               HoonHee Lee <hoonhee.lee@lge.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -168,7 +169,7 @@ gst_fc_bin_class_init (GstFCBinClass * klass)
   gst_element_class_set_static_metadata (element_class, "Flow Controller",
       "Lightweight/Controller/Flow",
       "data flow controller behind Fake Decoder",
-      "Justin Joy <justin.joy.9to5@gmail.com, Wonchul Lee <wonchul86.lee@lge.com>");
+      "Wonchul Lee <wonchul86.lee@lge.com>, HoonHee Lee <hoonhee.lee@lge.com>");
 
   /**
    * GstFcBin:n-video
@@ -735,22 +736,16 @@ gst_fc_bin_do_configure (GstFCBin * fcbin, GstPad * ghost_sinkpad,
       stream_id = gst_pad_get_stream_id (ghost_sinkpad);
     }
 
-    if (select->selector == NULL) {
-      /* gst_element_post_message (GST_ELEMENT_CAST (fcbin), 
-         gst_missing_element_message_new (GST_ELEMENT_CAST (fcbin),
-         "input-selector")); */
-    } else {
-      if (!multiple_stream) {
-        g_object_set (select->selector, "sync-streams", TRUE, NULL);
+    if (!multiple_stream) {
+      g_object_set (select->selector, "sync-streams", TRUE, NULL);
 
-        g_signal_connect (select->selector, "notify::active-pad",
-            G_CALLBACK (selector_active_pad_changed), fcbin);
-      }
-
-      GST_DEBUG_OBJECT (fcbin, "adding new selector %p", select->selector);
-      gst_element_set_state (select->selector, GST_STATE_PAUSED);
-      gst_bin_add (GST_BIN_CAST (fcbin), select->selector);
+      g_signal_connect (select->selector, "notify::active-pad",
+          G_CALLBACK (selector_active_pad_changed), fcbin);
     }
+
+    GST_DEBUG_OBJECT (fcbin, "adding new selector %p", select->selector);
+    gst_element_set_state (select->selector, GST_STATE_PAUSED);
+    gst_bin_add (GST_BIN_CAST (fcbin), select->selector);
   }
 
   if (multiple_stream) {
@@ -833,6 +828,9 @@ gst_fc_bin_do_configure (GstFCBin * fcbin, GstPad * ghost_sinkpad,
 
       if (fcbin->nb_streams != -1
           && fcbin->nb_streams == fcbin->nb_current_stream) {
+
+        gst_element_no_more_pads (GST_ELEMENT (fcbin));
+
         if (fcbin->video_srcpad) {
           gst_pad_remove_probe (fcbin->video_srcpad, fcbin->video_block_id);
           fcbin->video_block_id = 0;
@@ -845,7 +843,6 @@ gst_fc_bin_do_configure (GstFCBin * fcbin, GstPad * ghost_sinkpad,
           gst_pad_remove_probe (fcbin->text_srcpad, fcbin->text_block_id);
           fcbin->text_block_id = 0;
         }
-        gst_element_no_more_pads (GST_ELEMENT (fcbin));
       }
 
       g_ptr_array_add (select->channels, sinkpad);
