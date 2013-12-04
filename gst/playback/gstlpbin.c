@@ -585,7 +585,7 @@ static gboolean
 gst_lp_bin_bus_cb (GstBus * bus, GstMessage * message, gpointer data)
 {
   GstLpBin *lpbin = (GstLpBin *) data;
-  GST_DEBUG_OBJECT (lpbin, "gst_lp_bin_bus_cb");
+
   switch (GST_MESSAGE_TYPE (message)) {
     case GST_MESSAGE_STATE_CHANGED:
       GST_DEBUG_OBJECT (lpbin,
@@ -788,127 +788,12 @@ gst_lp_bin_query (GstElement * element, GstQuery * query)
 
       if (g_strrstr (klass, "Source/Network") && format == GST_FORMAT_BYTES) {
         GST_INFO_OBJECT (lpbin,
-            "gst_lp_bin_query : direct call source element about GST_QUERY_DURATION with GST_FORMAT_BYTES");
+            "direct call source element about GST_QUERY_DURATION with GST_FORMAT_BYTES");
         ret = gst_element_query (lpbin->source, query);
       } else {
         ret = GST_ELEMENT_CLASS (parent_class)->query (element, query);
       }
       break;
-    case GST_QUERY_BUFFERING:
-    {
-      /*1. get the children list to pull out the queue element */
-      GList *walk;
-      gchar *element_name;
-
-      for (walk = GST_BIN (lpbin)->children; walk; walk = g_list_next (walk)) {
-        GstElement *elem;
-
-        elem = GST_ELEMENT_CAST (walk->data);
-        element_name = gst_element_get_name (elem);
-
-        if (g_strrstr (element_name, "uridecodebin")) {
-          gint num_child;
-          guint index;
-          GObject *child;
-          gchar *child_name;
-
-          num_child = gst_child_proxy_get_children_count (elem);
-          for (index = 0; index < num_child; index++) {
-            child = gst_child_proxy_get_child_by_index (elem, index);
-            child_name = gst_element_get_name (child);
-
-            /* find Queue2 element */
-            if (g_strrstr (child_name, "queue")) {
-              if (gst_lp_bin_get_buffering_query ( /*lpbin, */ query, child,
-                      &percent, &start, &stop)) {
-                /*2. Sum each value */
-                n_queue++;
-                total_percent += percent;
-                total_start += start;
-                total_stop += stop;
-
-                gst_query_parse_buffering_stats (query, &mode, &avg_in,
-                    &avg_out, &buffering_left);
-                if (avg_out)
-                  gst_query_set_buffering_stats (query, GST_BUFFERING_DOWNLOAD,
-                      avg_in, avg_out, buffering_left);
-                ret = TRUE;
-              }
-            }
-
-            /*find MultiQueue element */
-            if (ret =
-                gst_lp_bin_find_queue (query, child_name, "decodebin", child,
-                    &queue, &percent, &start, &stop)) {
-              n_queue += queue;
-              total_percent += percent;
-              total_start += start;
-              total_stop += stop;
-            }
-          }
-
-          g_free (child_name);
-        }
-
-        /*find lpsink */
-        if (g_strrstr (element_name, "lpsink")) {
-          gint num_child;
-          guint index;
-          GObject *child;
-          gchar *child_name;
-
-          num_child = gst_child_proxy_get_children_count (elem);
-
-          for (index = 0; index < num_child; index++) {
-            child = gst_child_proxy_get_child_by_index (elem, index);
-            child_name = gst_element_get_name (child);
-
-            /*find vbin's queue */
-            if (ret = gst_lp_bin_find_queue (query, child_name, "vbin", child,
-                    &queue, &percent, &start, &stop)) {
-              n_queue += queue;
-              total_percent += percent;
-              total_start += start;
-              total_stop += stop;
-            }
-
-            /*find abin's queue */
-            if (ret = gst_lp_bin_find_queue (query, child_name, "abin", child,
-                    &queue, &percent, &start, &stop)) {
-              n_queue += queue;
-              total_percent += percent;
-              total_start += start;
-              total_stop += stop;
-            }
-          }
-
-          g_free (child_name);
-        }
-
-      }
-
-      if (!n_queue) {
-        GST_WARNING_OBJECT (lpbin, "Buffeing query fail");
-        ret = FALSE;
-        break;
-      }
-
-      gst_query_parse_buffering_range (query, &format, NULL, NULL, NULL);
-
-      total_percent = (total_percent / n_queue);
-      if (total_percent < 0)
-        total_percent = 0;
-      else if (total_percent > 100)
-        total_percent = 100;
-
-      gst_query_set_buffering_percent (query, NULL, total_percent);
-      gst_query_set_buffering_range (query, format, total_start, total_stop,
-          NULL);
-
-      g_free (element_name);
-
-      break;
-    }
     default:
       ret = GST_ELEMENT_CLASS (parent_class)->query (element, query);
       break;
