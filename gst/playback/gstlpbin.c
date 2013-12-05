@@ -911,7 +911,7 @@ gst_lp_bin_retrieve_thumbnail (GstLpBin * lpbin, gint width, gint height,
       "pixel-aspect-ratio", GST_TYPE_FRACTION, 1, 1, NULL);
 
   GST_DEBUG_OBJECT (lpbin, "retrieve_thumbnail : video_sink name = %s",
-      gst_element_get_name (lpbin->video_sink));
+      GST_ELEMENT_NAME (lpbin->video_sink));
   g_signal_emit_by_name (G_OBJECT (lpbin->video_sink), "convert-frame", caps,
       &result);
   GST_DEBUG_OBJECT (lpbin, "retrieve_thumbnail : result = %p", result);
@@ -2000,15 +2000,15 @@ gst_lp_bin_do_property_set (GstLpBin * lpbin, GstElement * element)
   gpointer key, value;
 
   if (lpbin->elements_str != NULL
-      && g_strrstr (lpbin->elements_str, gst_element_get_name (element))) {
+      && g_strrstr (lpbin->elements_str, GST_ELEMENT_NAME (element))) {
     GST_DEBUG_OBJECT (lpbin,
         "gst_lp_bin_do_property_set : element = %s already did it",
-        gst_element_get_name (element));
+        GST_ELEMENT_NAME (element));
     return;
   }
 
   lpbin->elements_str =
-      g_strconcat (g_strdup_printf ("%s:", gst_element_get_name (element)),
+      g_strconcat (g_strdup_printf ("%s:", GST_ELEMENT_NAME (element)),
       lpbin->elements_str, NULL);
 
   g_hash_table_iter_init (&iter, lpbin->property_pairs);
