@@ -1029,7 +1029,6 @@ srcpad_blocked_cb (GstPad * blockedpad, GstPadProbeInfo * info,
   GstLpSink *lpsink = (GstLpSink *) user_data;
   GstSinkChain *chain;
   const gchar *pad_type = NULL;
-  gchar *pad_name = NULL;
   gchar *stream_id = NULL;
 
   GST_LP_SINK_LOCK (lpsink);
@@ -1045,9 +1044,8 @@ srcpad_blocked_cb (GstPad * blockedpad, GstPadProbeInfo * info,
   else if (chain->type == GST_LP_SINK_TYPE_TEXT)
     pad_type = "text";
 
-  pad_name = gst_pad_get_name (blockedpad);
-  GST_DEBUG_OBJECT (blockedpad, "%s pad(%s) blocked", pad_type, pad_name);
-  g_free (pad_name);
+  GST_DEBUG_OBJECT (blockedpad, "%s pad(%s) blocked", pad_type,
+      GST_PAD_NAME (blockedpad));
 
   if (stream_id) {
     g_signal_emit (G_OBJECT (lpsink),

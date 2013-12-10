@@ -2176,11 +2176,11 @@ get_tags (GstLpBin * lpbin, gint type, gint stream)
   sinkpad = g_ptr_array_index (channels, stream);
   if (g_object_class_find_property (G_OBJECT_GET_CLASS (sinkpad), "tags")) {
     GST_DEBUG_OBJECT (lpbin, "get_tags : %s has tags property",
-        gst_pad_get_name (sinkpad));
+        GST_PAD_NAME (sinkpad));
     g_object_get (sinkpad, "tags", &result, NULL);
   } else {
     GST_DEBUG_OBJECT (lpbin, "get_tags : there is a taglist in funnel : %s",
-        gst_pad_get_name (sinkpad));
+        GST_PAD_NAME (sinkpad));
     result = g_object_get_data (G_OBJECT (sinkpad), "funnel.taglist");
   }
   GST_DEBUG_OBJECT (lpbin, "get_tags : result = %p", result);
