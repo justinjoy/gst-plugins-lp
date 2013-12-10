@@ -1,10 +1,12 @@
-gst-plugins-lp
-==============
+Gstreamer Lightweigh Playback
+=============
 
-Gstreamer Lightweight Playback Plugins
+This is a plugins set to support playback in restrict environment.
 
-  * Fake Decoder
-    Sometimes stream should be decoded just before reaching renderer. 
-    Especially, if using a restricted hardware decoder, playbin's structure 
-    is not compatible with this obejctive. In this condition, a Fake Decoder
-    can be a solution to send decoder back-side of pipeline even using URIDecodebin.
+More Documentation
+=============
+checkout docs directory
+
+License
+=============
+Codes are under LGPL.
