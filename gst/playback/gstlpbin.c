@@ -173,11 +173,6 @@ static GstTagList *gst_lp_bin_get_text_tags (GstLpBin * lpbin, gint stream);
 static GstPad *gst_lp_bin_get_video_pad (GstLpBin * lpbin, gint stream);
 static GstPad *gst_lp_bin_get_audio_pad (GstLpBin * lpbin, gint stream);
 static GstPad *gst_lp_bin_get_text_pad (GstLpBin * lpbin, gint stream);
-static gboolean gst_lp_bin_get_buffering_query (GstQuery * query,
-    GstElement * element, gint * percent, gint64 * start, gint64 * stop);
-static gboolean gst_lp_bin_find_queue (GstQuery * query, gchar * elem_name,
-    gchar * find_name, GObject * child_elem, gint * n_queue,
-    gint * total_percent, gint64 * total_start, gint64 * total_stop);
 static void replace_stream_id_blocked_table (gchar * stream_id,
     gboolean blocked, GstLpBin * lpbin);
 
@@ -777,17 +772,10 @@ gst_lp_bin_query (GstElement * element, GstQuery * query)
 {
   GstLpBin *lpbin = GST_LP_BIN (element);
   GstFormat format;
-  GstBufferingMode mode;
-  gint percent, avg_in, avg_out;
-  gint total_percent, queue, n_queue;
-  gint64 start, stop, estimated_total, buffering_left;
-  gint64 total_start, total_stop;
   GstElementFactory *factory = NULL;
   const gchar *klass = NULL;
   gboolean ret;
 
-  total_percent = n_queue = 0;
-  total_start = total_stop = 0;
   GST_LP_BIN_LOCK (lpbin);
 
   switch (GST_QUERY_TYPE (query)) {
@@ -797,8 +785,8 @@ gst_lp_bin_query (GstElement * element, GstQuery * query)
       gst_query_parse_duration (query, &format, NULL);
 
       if (g_strrstr (klass, "Source/Network") && format == GST_FORMAT_BYTES) {
-        GST_INFO_OBJECT (lpbin,
-            "direct call source element about GST_QUERY_DURATION with GST_FORMAT_BYTES");
+        GST_DEBUG_OBJECT (lpbin,
+            "source element will directly answer for BYTE format duration query.");
         ret = gst_element_query (lpbin->source, query);
       } else {
         ret = GST_ELEMENT_CLASS (parent_class)->query (element, query);
@@ -812,79 +800,6 @@ gst_lp_bin_query (GstElement * element, GstQuery * query)
   GST_LP_BIN_UNLOCK (lpbin);
 
   return ret;
-}
-
-static gboolean
-gst_lp_bin_find_queue (GstQuery * query, gchar * elem_name, gchar * find_name,
-    GObject * child_elem, gint * n_queue, gint * total_percent,
-    gint64 * total_start, gint64 * total_stop)
-{
-  GObject *child;
-  gchar *child_name;
-  gint percent, num_child;
-  gint temp, temp2;
-  guint index;
-  gint64 start, stop;
-  gint64 temp3, temp4;
-  gboolean ret = FALSE;
-
-  temp = temp2 = 0;
-  temp3 = temp4 = 0;
-  percent = start = stop = 0;
-
-  if (g_strrstr (elem_name, find_name)) {
-    num_child = gst_child_proxy_get_children_count (child_elem);
-
-    for (index = 0; index < num_child; index++) {
-      child = gst_child_proxy_get_child_by_index (child_elem, index);
-      child_name = gst_element_get_name (child);
-
-      if (g_strrstr (child_name, "queue")) {
-        if (gst_lp_bin_get_buffering_query (query, child, &percent, &start,
-                &stop)) {
-          temp++;
-          temp2 += percent;
-          temp3 += start;
-          temp4 += stop;
-
-          ret = TRUE;
-        }
-      }
-    }
-  }
-
-  if (ret) {
-    *n_queue = temp;
-    *total_percent = temp2;
-    *total_start = temp3;
-    *total_stop = temp4;
-  }
-
-  return ret;
-}
-
-static gboolean
-gst_lp_bin_get_buffering_query (GstQuery * query, GstElement * element,
-    gint * q_percent, gint64 * q_start, gint64 * q_stop)
-{
-  GstFormat format;
-  gint percent;
-  gint64 start, stop, estimated_total;
-  gboolean busy;
-
-  if (gst_element_query (element, query)) {
-    gst_query_parse_buffering_percent (query, &busy, &percent);
-    gst_query_parse_buffering_range (query, &format, &start, &stop,
-        &estimated_total);
-
-    *q_percent = percent;
-    *q_start = start;
-    *q_stop = stop;
-
-    return TRUE;
-  }
-
-  return FALSE;
 }
 
 static void
