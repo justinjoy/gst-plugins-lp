@@ -683,6 +683,7 @@ gst_lp_bin_init (GstLpBin * lpbin)
   lpbin->text_pad = NULL;
 
   lpbin->thumbnail_mode = DEFAULT_THUMBNAIL_MODE;
+  lpbin->pending_thumbnail = FALSE;
   lpbin->use_buffering = DEFAULT_USE_BUFFERING;
   lpbin->use_resource_manager = DEFAULT_USE_RESOURCE_MANAGER;
 
@@ -1336,8 +1337,16 @@ gst_lp_bin_set_thumbnail_mode (GstLpBin * lpbin, gboolean thumbnail_mode)
 {
   GST_DEBUG_OBJECT (lpbin, "set thumbnail mode to lpsink as %d",
       thumbnail_mode);
+
+  GST_LP_BIN_LOCK (lpbin);
   lpbin->thumbnail_mode = thumbnail_mode;
-  gst_lp_sink_set_thumbnail_mode (lpbin->lpsink, thumbnail_mode);
+
+  if (lpbin->lpsink)
+    gst_lp_sink_set_thumbnail_mode (lpbin->lpsink, thumbnail_mode);
+  else
+    lpbin->pending_thumbnail = thumbnail_mode;
+
+  GST_LP_BIN_UNLOCK (lpbin);
 }
 
 static void
@@ -1429,6 +1438,10 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
   lpbin->pad_blocked_id =
       g_signal_connect (lpbin->lpsink, "pad-blocked",
       G_CALLBACK (pad_blocked_cb), lpbin);
+  if (lpbin->pending_thumbnail) {
+    gst_lp_sink_set_thumbnail_mode (lpbin->lpsink, TRUE);
+    lpbin->pending_thumbnail = FALSE;
+  }
 
   /* 
    * FIXME: These are not compatible with multi-sink support.
