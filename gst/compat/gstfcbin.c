@@ -83,6 +83,8 @@ static void gst_fc_bin_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * spec);
 static GstPad *gst_fc_bin_request_new_pad (GstElement * element,
     GstPadTemplate * templ, const gchar * name, const GstCaps * caps);
+static gboolean gst_fc_bin_src_query (GstPad * pad, GstObject * parent,
+    GstQuery * query);
 static gboolean array_has_value (const gchar * values[], const gchar * value);
 static gboolean gst_fc_bin_funnel_pad_event (GstPad * pad, GstObject * parent,
     GstEvent * event);
@@ -309,6 +311,7 @@ gst_fc_bin_class_init (GstFCBinClass * klass)
   //element_class->change_state = GST_DEBUG_FUNCPTR (gst_fc_bin_change_state);
   element_class->request_new_pad =
       GST_DEBUG_FUNCPTR (gst_fc_bin_request_new_pad);
+  //element_class->query = GST_DEBUG_FUNCPTR (gst_fc_bin_query);
 
   klass->unblock_sinkpads = GST_DEBUG_FUNCPTR (gst_fc_bin_unblock_sinkpads);
 
@@ -353,6 +356,10 @@ gst_fc_bin_init (GstFCBin * fcbin)
 
   fcbin->nb_streams = 0;
   fcbin->nb_current_stream = 0;
+
+  fcbin->caps_pairs =
+      g_hash_table_new_full (g_str_hash, g_str_equal, (GDestroyNotify) g_free,
+      (GDestroyNotify) gst_caps_unref);
 }
 
 static void
@@ -361,6 +368,11 @@ gst_fc_bin_finalize (GObject * obj)
   GstFCBin *fcbin;
 
   fcbin = GST_FC_BIN (obj);
+
+  if (fcbin->caps_pairs != NULL) {
+    g_hash_table_unref (fcbin->caps_pairs);
+    fcbin->caps_pairs = NULL;
+  }
 
   g_rec_mutex_clear (&fcbin->lock);
 
@@ -758,6 +770,7 @@ gst_fc_bin_do_configure (GstFCBin * fcbin, GstPad * ghost_sinkpad,
 
       sel_srcpad = gst_element_get_static_pad (select->selector, "src");
       select->srcpad = gst_ghost_pad_new (NULL, sel_srcpad);
+      gst_pad_set_query_function (select->srcpad, gst_fc_bin_src_query);
 
       if (type == GST_LP_SINK_TYPE_AUDIO)
         g_object_set_data (G_OBJECT (select->srcpad), "type",
@@ -859,12 +872,22 @@ caps_notify_cb (GstPad * pad, GParamSpec * unused, GstFCBin * fcbin)
   gchar *caps_str = NULL;
   GstStructure *s = NULL;
   gboolean multiple_stream = FALSE;
+  gchar *stream_id = NULL;
 
   g_object_get (pad, "caps", &caps, NULL);
   s = gst_caps_get_structure (caps, 0);
   caps_str = gst_caps_to_string (caps);
+  stream_id = gst_pad_get_stream_id (pad);
 
-  GST_INFO_OBJECT (fcbin, "caps_notify_cb : caps = %s", caps_str);
+  GST_INFO_OBJECT (fcbin, "caps_notify_cb : caps = %s, stream_id = %s",
+      caps_str, stream_id);
+
+  if (!g_hash_table_contains (fcbin->caps_pairs, g_strdup (stream_id))) {
+    GST_FC_BIN_LOCK (fcbin);
+    g_hash_table_insert (fcbin->caps_pairs, g_strdup (stream_id),
+        gst_caps_ref (caps));
+    GST_FC_BIN_UNLOCK (fcbin);
+  }
 
   if (gst_structure_has_field (s, "multiple-stream")) {
     multiple_stream =
@@ -1038,6 +1061,35 @@ gst_fc_bin_unblock_sinkpads (GstFCBin * fcbin)
   gst_iterator_free (it);
 
   return TRUE;
+}
+
+static gboolean
+gst_fc_bin_src_query (GstPad * pad, GstObject * parent, GstQuery * query)
+{
+  GstFCBin *fcbin = (GstFCBin *) parent;
+  gboolean ret;
+  GstStructure *s = NULL;
+  const gchar *stream_id = NULL;
+  GstCaps *caps = NULL;
+
+  if (GST_QUERY_TYPE (query) == GST_QUERY_CUSTOM) {
+    s = gst_query_writable_structure (query);
+    if (gst_structure_has_name (s, "get-caps-by-streamid") && fcbin->caps_pairs) {
+      stream_id = gst_structure_get_string (s, "stream-id");
+      caps = g_hash_table_lookup (fcbin->caps_pairs, stream_id);
+      GST_INFO_OBJECT (fcbin,
+          "gst_fc_bin_query : GST_QUERY_CUSTOM, stream-id:%s, caps:%s",
+          stream_id, gst_caps_to_string (caps));
+      gst_structure_id_set (s, g_quark_from_static_string ("caps"),
+          GST_TYPE_CAPS, caps, NULL);
+      ret = TRUE;
+      goto done;
+    }
+  }
+
+  ret = gst_pad_query_default (pad, parent, query);
+done:
+  return ret;
 }
 
 /*

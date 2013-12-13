@@ -678,6 +678,7 @@ static GstPadProbeReturn
 srcpad_blocked_cb (GstPad * blockedpad, GstPadProbeInfo * info,
     gpointer user_data);
 
+#if 0
 static void
 caps_notify_cb_from_demux (GstPad * pad, GParamSpec * unused,
     GstLpSink * lpsink)
@@ -748,18 +749,22 @@ caps_notify_cb_from_demux (GstPad * pad, GParamSpec * unused,
   if (caps)
     gst_caps_unref (caps);
 }
+#endif
 
-#if 0
 static void
 pad_added_cb (GstElement * element, GstPad * pad, GstLpSink * lpsink)
 {
   GstElement *queue = NULL;
   GstPad *queue_sinkpad = NULL;
   GstPad *queue_srcpad = NULL;
+  GstPad *ghost_sinkpad = NULL;
+  GstPad *sid_sinkpad = NULL;
   gulong *block_id = NULL;
-  gboolean reconfigure = FALSE;
   GstSinkChain *chain = NULL;
-
+  GstCaps *caps = NULL;
+  GstStructure *s = NULL;
+  gchar *stream_id = NULL;
+  GstQuery *query = NULL;
 
   queue = gst_element_factory_make ("queue", NULL);
   g_object_set (queue, "silent", TRUE, NULL);
@@ -767,44 +772,67 @@ pad_added_cb (GstElement * element, GstPad * pad, GstLpSink * lpsink)
   gst_element_set_state (queue, GST_STATE_PAUSED);
 
   queue_sinkpad = gst_element_get_static_pad (queue, "sink");
+  queue_srcpad = gst_element_get_static_pad (queue, "src");
 
   gst_pad_link_full (pad, queue_sinkpad, GST_PAD_LINK_CHECK_NOTHING);
   gst_object_unref (queue_sinkpad);
 
-  queue_srcpad = gst_element_get_static_pad (queue, "src");
 
+  sid_sinkpad = gst_element_get_static_pad (element, "sink");
+  ghost_sinkpad = gst_pad_get_peer (sid_sinkpad);
+
+  stream_id = gst_pad_get_stream_id (ghost_sinkpad);
+  s = gst_structure_new ("get-caps-by-streamid",
+      "stream-id", G_TYPE_STRING, stream_id, "caps", GST_TYPE_CAPS, caps, NULL);
+  query = gst_query_new_custom (GST_QUERY_CUSTOM, s);
+
+
+  if (gst_pad_query (pad, query)) {
+    gchar *caps_name = NULL;
+    const GstStructure *structure;
+
+    structure = gst_query_get_structure (query);
+    caps = g_value_get_boxed (gst_structure_get_value (structure, "caps"));
+    caps_name = gst_caps_to_string (caps);
+
+    GST_INFO_OBJECT (lpsink, "get-caps-by-streamid query result = %s",
+        caps_name);
+
+    g_free (caps_name);
+  }
+
+  GST_LP_SINK_LOCK (lpsink);
   chain = g_slice_alloc0 (sizeof (GstSinkChain));
   block_id = &chain->block_id;
   chain->peer_srcpad_queue = gst_object_ref (queue_srcpad);
+  chain->caps = caps;
 
-  if (element == lpsink->video_streamid_demux)
+  if (element == lpsink->video_streamid_demux) {
     chain->type = GST_LP_SINK_TYPE_VIDEO;
-  else if (element == lpsink->audio_streamid_demux)
+    lpsink->video_chains = g_list_append (lpsink->video_chains, chain);
+  } else if (element == lpsink->audio_streamid_demux) {
     chain->type = GST_LP_SINK_TYPE_AUDIO;
-  else if (element == lpsink->text_streamid_demux)
+    lpsink->audio_chains = g_list_append (lpsink->audio_chains, chain);
+  } else if (element == lpsink->text_streamid_demux) {
     chain->type = GST_LP_SINK_TYPE_TEXT;
+    lpsink->text_chains = g_list_append (lpsink->text_chains, chain);
+  }
 
-  lpsink->sink_chains = g_list_append (lpsink->sink_chains, chain);
-
-  //TODO: should be handle multiple stream
-  /*if ((lpsink->audio_streamid_demux && lpsink->audiochain) ||
-     (lpsink->video_streamid_demux && lpsink->videochain) ||
-     (lpsink->text_streamid_demux && lpsink->textchain))
-     reconfigure = TRUE; */
+  GST_LP_SINK_UNLOCK (lpsink);
+  g_object_set_data (G_OBJECT (queue_srcpad), "lpsink.chain", chain);
 
   if (block_id && *block_id == 0) {
     *block_id =
         gst_pad_add_probe (queue_srcpad, GST_PAD_PROBE_TYPE_BLOCK_DOWNSTREAM,
         srcpad_blocked_cb, lpsink, NULL);
-    //PENDING_FLAG_SET (lpsink, type);
   }
 
+  gst_query_unref (query);
+  g_free (stream_id);
   gst_object_unref (queue_srcpad);
-
-  if (reconfigure)
-    gst_lp_sink_reconfigure (lpsink);
+  gst_object_unref (sid_sinkpad);
+  gst_object_unref (ghost_sinkpad);
 }
-#endif
 
 void
 gst_lp_sink_set_all_pads_blocked (GstLpSink * lpsink)
@@ -901,8 +929,8 @@ gst_lp_sink_setup_element (GstLpSink * lpsink, GstElement ** streamid_demux,
 
   demux_sinkpad = gst_element_get_static_pad (*streamid_demux, "sink");
   *ghost_sinkpad = gst_ghost_pad_new (pad_name, demux_sinkpad);
-  g_signal_connect (G_OBJECT (demux_sinkpad), "notify::caps",
-      G_CALLBACK (caps_notify_cb_from_demux), lpsink);
+  g_signal_connect (G_OBJECT (*streamid_demux), "pad-added",
+      G_CALLBACK (pad_added_cb), lpsink);
 
   gst_element_set_state (*streamid_demux, GST_STATE_PAUSED);
 

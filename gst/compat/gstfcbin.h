@@ -79,6 +79,8 @@ struct _GstFCBin
 
   gint nb_streams;
   gint nb_current_stream;
+
+  GHashTable *caps_pairs;
 };
 
 struct _GstFCBinClass
