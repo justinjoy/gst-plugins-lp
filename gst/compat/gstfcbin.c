@@ -88,8 +88,8 @@ static gboolean gst_fc_bin_src_query (GstPad * pad, GstObject * parent,
 static gboolean array_has_value (const gchar * values[], const gchar * value);
 static gboolean gst_fc_bin_funnel_pad_event (GstPad * pad, GstObject * parent,
     GstEvent * event);
-/*static GstStateChangeReturn gst_fc_bin_change_state (GstElement * element,
-    GstStateChange transition);*/
+static GstStateChangeReturn gst_fc_bin_change_state (GstElement * element,
+    GstStateChange transition);
 static gboolean gst_fc_bin_unblock_sinkpads (GstFCBin * fcbin);
 
 static GstStaticPadTemplate gst_fc_bin_sink_pad_template =
@@ -308,7 +308,7 @@ gst_fc_bin_class_init (GstFCBinClass * klass)
       G_STRUCT_OFFSET (GstFCBinClass, unblock_sinkpads), NULL, NULL,
       g_cclosure_marshal_generic, G_TYPE_BOOLEAN, 0);
 
-  //element_class->change_state = GST_DEBUG_FUNCPTR (gst_fc_bin_change_state);
+  element_class->change_state = GST_DEBUG_FUNCPTR (gst_fc_bin_change_state);
   element_class->request_new_pad =
       GST_DEBUG_FUNCPTR (gst_fc_bin_request_new_pad);
   //element_class->query = GST_DEBUG_FUNCPTR (gst_fc_bin_query);
@@ -356,10 +356,39 @@ gst_fc_bin_init (GstFCBin * fcbin)
 
   fcbin->nb_streams = 0;
   fcbin->nb_current_stream = 0;
+  fcbin->nb_video = 0;
+  fcbin->nb_audio = 0;
+  fcbin->nb_text = 0;
 
   fcbin->caps_pairs =
       g_hash_table_new_full (g_str_hash, g_str_equal, (GDestroyNotify) g_free,
       (GDestroyNotify) gst_caps_unref);
+
+  fcbin->video_pads = NULL;
+  fcbin->audio_pads = NULL;
+  fcbin->text_pads = NULL;
+}
+
+static void
+gst_fc_bin_reset (GstFCBin * fcbin)
+{
+  if (fcbin->caps_pairs != NULL) {
+    g_hash_table_unref (fcbin->caps_pairs);
+    fcbin->caps_pairs = NULL;
+  }
+
+  if (fcbin->video_pads) {
+    g_ptr_array_free (fcbin->video_pads, TRUE);
+    fcbin->video_pads = NULL;
+  }
+  if (fcbin->audio_pads) {
+    g_ptr_array_free (fcbin->audio_pads, TRUE);
+    fcbin->audio_pads = NULL;
+  }
+  if (fcbin->text_pads) {
+    g_ptr_array_free (fcbin->text_pads, TRUE);
+    fcbin->text_pads = NULL;
+  }
 }
 
 static void
@@ -369,10 +398,7 @@ gst_fc_bin_finalize (GObject * obj)
 
   fcbin = GST_FC_BIN (obj);
 
-  if (fcbin->caps_pairs != NULL) {
-    g_hash_table_unref (fcbin->caps_pairs);
-    fcbin->caps_pairs = NULL;
-  }
+  gst_fc_bin_reset (fcbin);
 
   g_rec_mutex_clear (&fcbin->lock);
 
@@ -862,7 +888,25 @@ gst_fc_bin_do_configure (GstFCBin * fcbin, GstPad * ghost_sinkpad,
     g_free (pad_name);
   }
   g_free (stream_id);
+}
 
+gint
+get_type (gchar * caps_str)
+{
+  gint type = -1;
+
+  if (g_str_has_prefix (caps_str, "video/")
+      || g_str_has_prefix (caps_str, "image/")) {
+    type = GST_LP_SINK_TYPE_VIDEO;
+  } else if (g_str_has_prefix (caps_str, "audio/")) {
+    type = GST_LP_SINK_TYPE_AUDIO;
+  } else if (g_str_has_prefix (caps_str, "text/")
+      || g_str_has_prefix (caps_str, "application/")
+      || g_str_has_prefix (caps_str, "subpicture/")) {
+    type = GST_LP_SINK_TYPE_TEXT;
+  }
+
+  return type;
 }
 
 static void
@@ -873,6 +917,19 @@ caps_notify_cb (GstPad * pad, GParamSpec * unused, GstFCBin * fcbin)
   GstStructure *s = NULL;
   gboolean multiple_stream = FALSE;
   gchar *stream_id = NULL;
+  gint type = -1;
+  gint count = 0;
+  GPtrArray *pads = NULL;
+  GstPad *ghostpad = NULL;
+  gulong ready_to_link = 0;
+  gulong block_id = 0;
+
+  if (gst_ghost_pad_get_target (GST_GHOST_PAD (pad)) != NULL) {
+    GST_DEBUG_OBJECT (fcbin,
+        "caps_notify_cb : pad = %s already has target",
+        GST_DEBUG_PAD_NAME (pad));
+    goto done;
+  }
 
   g_object_get (pad, "caps", &caps, NULL);
   s = gst_caps_get_structure (caps, 0);
@@ -881,6 +938,8 @@ caps_notify_cb (GstPad * pad, GParamSpec * unused, GstFCBin * fcbin)
 
   GST_INFO_OBJECT (fcbin, "caps_notify_cb : caps = %s, stream_id = %s",
       caps_str, stream_id);
+
+  type = get_type (caps_str);
 
   if (!g_hash_table_contains (fcbin->caps_pairs, g_strdup (stream_id))) {
     GST_FC_BIN_LOCK (fcbin);
@@ -897,25 +956,35 @@ caps_notify_cb (GstPad * pad, GParamSpec * unused, GstFCBin * fcbin)
   GST_INFO_OBJECT (fcbin, "caps_notify_cb : multiple_stream = %d",
       multiple_stream);
 
-  if (gst_ghost_pad_get_target (GST_GHOST_PAD (pad)) != NULL) {
-    GST_DEBUG_OBJECT (fcbin,
-        "caps_notify_cb : pad = %s already has target",
-        GST_DEBUG_PAD_NAME (pad));
-    goto done;
+  GST_FC_BIN_LOCK (fcbin);
+  switch (type) {
+    case GST_LP_SINK_TYPE_VIDEO:
+      pads = fcbin->video_pads;
+      break;
+    case GST_LP_SINK_TYPE_AUDIO:
+      pads = fcbin->audio_pads;
+      break;
+    case GST_LP_SINK_TYPE_TEXT:
+      pads = fcbin->text_pads;
+      multiple_stream = TRUE;
+      break;
+    default:
+      pads = NULL;
+      break;
   }
 
-  GST_FC_BIN_LOCK (fcbin);
-  if (g_str_has_prefix (caps_str, "video/")
-      || g_str_has_prefix (caps_str, "image/jpeg")) {
-    gst_fc_bin_do_configure (fcbin, pad, GST_LP_SINK_TYPE_VIDEO,
-        multiple_stream);
-  } else if (g_str_has_prefix (caps_str, "audio/")) {
-    gst_fc_bin_do_configure (fcbin, pad, GST_LP_SINK_TYPE_AUDIO,
-        multiple_stream);
-  } else if (g_str_has_prefix (caps_str, "text/")
-      || g_str_has_prefix (caps_str, "application/")
-      || g_str_has_prefix (caps_str, "subpicture/")) {
-    gst_fc_bin_do_configure (fcbin, pad, GST_LP_SINK_TYPE_TEXT, TRUE);
+  if (pads != NULL) {
+    gst_fc_bin_do_configure (fcbin, pad, type, multiple_stream);
+    g_ptr_array_remove (pads, pad);
+
+    if (pads->len > 0) {
+      ghostpad = g_ptr_array_index (pads, 0);
+      block_id = (guintptr) g_object_get_data (G_OBJECT (ghostpad), "block_id");
+      if (block_id) {
+        gst_pad_remove_probe (ghostpad, block_id);
+        g_object_set_data (G_OBJECT (ghostpad), "block_id", 0);
+      }
+    }
   }
   GST_FC_BIN_UNLOCK (fcbin);
 
@@ -935,15 +1004,47 @@ gst_fc_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
   const GstStructure *s;
   const gchar *in_name;
   gulong block_id;
+  gchar *padname = NULL;
+  gint type = -1;
 
   fcbin = GST_FC_BIN (element);
 
   s = gst_caps_get_structure (caps, 0);
   in_name = gst_structure_get_name (s);
 
-  ghost_sinkpad = gst_ghost_pad_new_no_target (NULL, GST_PAD_SINK);
+  type = get_type (in_name);
+
+  if (type == GST_LP_SINK_TYPE_VIDEO) {
+    padname = g_strdup_printf ("video_%u", fcbin->nb_video);
+    if (fcbin->video_pads == NULL)
+      fcbin->video_pads = g_ptr_array_new ();
+  } else if (type == GST_LP_SINK_TYPE_AUDIO) {
+    padname = g_strdup_printf ("audio_%u", fcbin->nb_audio);
+    if (fcbin->audio_pads == NULL)
+      fcbin->audio_pads = g_ptr_array_new ();
+  } else if (type == GST_LP_SINK_TYPE_TEXT) {
+    padname = g_strdup_printf ("text_%u", fcbin->nb_text);
+    if (fcbin->text_pads == NULL)
+      fcbin->text_pads = g_ptr_array_new ();
+  }
+
+  GST_INFO_OBJECT (fcbin, "gst_fc_bin_request_new_pad : padname = %s", padname);
+  ghost_sinkpad = gst_ghost_pad_new_no_target (padname, GST_PAD_SINK);
+  if (padname)
+    g_free (padname);
   g_signal_connect (G_OBJECT (ghost_sinkpad), "notify::caps",
       G_CALLBACK (caps_notify_cb), fcbin);
+
+  if (type == GST_LP_SINK_TYPE_VIDEO) {
+    g_ptr_array_add (fcbin->video_pads, gst_object_ref (ghost_sinkpad));
+    fcbin->nb_video++;
+  } else if (type == GST_LP_SINK_TYPE_AUDIO) {
+    g_ptr_array_add (fcbin->audio_pads, gst_object_ref (ghost_sinkpad));
+    fcbin->nb_audio++;
+  } else if (type == GST_LP_SINK_TYPE_TEXT) {
+    g_ptr_array_add (fcbin->text_pads, gst_object_ref (ghost_sinkpad));
+    fcbin->nb_text++;
+  }
 
   gst_pad_set_active (ghost_sinkpad, TRUE);
   gst_element_add_pad (GST_ELEMENT_CAST (fcbin), ghost_sinkpad);
@@ -1037,13 +1138,23 @@ unblock_pads (const GValue * item, GstFCBin * fcbin)
 {
   GstPad *pad = g_value_get_object (item);
   gulong block_id;
+  gchar *padname = NULL;
 
   GST_DEBUG_OBJECT (fcbin, "Unblock pad %s:%s", GST_DEBUG_PAD_NAME (pad));
-  if ((block_id = (guintptr) g_object_get_data (G_OBJECT (pad), "block_id"))) {
-    gst_pad_remove_probe (pad, block_id);
-    g_object_set_data (G_OBJECT (pad), "block_id", 0);
+  padname = gst_pad_get_name (pad);
+
+  GST_FC_BIN_LOCK (fcbin);
+  if (block_id = (guintptr) g_object_get_data (G_OBJECT (pad), "block_id")) {
+    if (strcmp (padname, "video_0") || strcmp (padname, "audio_0")
+        || strcmp (padname, "text_0")) {
+      gst_pad_remove_probe (pad, block_id);
+      g_object_set_data (G_OBJECT (pad), "block_id", 0);
+    }
     fcbin->nb_streams++;
   }
+  GST_FC_BIN_UNLOCK (fcbin);
+
+  g_free (padname);
 }
 
 static gboolean
@@ -1092,7 +1203,6 @@ done:
   return ret;
 }
 
-/*
 static GstStateChangeReturn
 gst_fc_bin_change_state (GstElement * element, GstStateChange transition)
 {
@@ -1100,7 +1210,7 @@ gst_fc_bin_change_state (GstElement * element, GstStateChange transition)
   GstFCBin *fcbin;
 
   fcbin = GST_FC_BIN (element);
-
+/*
   switch (transition) {
     case GST_STATE_CHANGE_NULL_TO_READY:
       break;
@@ -1111,13 +1221,16 @@ gst_fc_bin_change_state (GstElement * element, GstStateChange transition)
     default:
       break;
   }
-
+*/
   ret = GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
 
   if (ret == GST_STATE_CHANGE_FAILURE)
     goto failure;
-
   switch (transition) {
+    case GST_STATE_CHANGE_PAUSED_TO_READY:
+      gst_fc_bin_reset (fcbin);
+      break;
+/*
     case GST_STATE_CHANGE_READY_TO_NULL:
     {
       GstIterator *it;
@@ -1154,16 +1267,16 @@ gst_fc_bin_change_state (GstElement * element, GstStateChange transition)
       GST_FC_BIN_UNLOCK (fcbin);
       break;
     }
+*/
     default:
       break;
   }
-  return ret;*/
+  return ret;
 
   /* ERRORS */
-/*failure:
+failure:
   {
     return ret;
   }
 
 }
-*/
