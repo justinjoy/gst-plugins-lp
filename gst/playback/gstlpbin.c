@@ -1516,6 +1516,9 @@ gst_lp_bin_deactive (GstLpBin * lpbin)
     //gst_object_unref (lpbin->lpsink);
     lpbin->lpsink = NULL;
   }
+
+  gst_bus_remove_signal_watch (lpbin->bus);
+
   REMOVE_SIGNAL (lpbin->bus, lpbin->bus_msg_cb_id);
   REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->pad_added_id);
   REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->pad_removed_id);
