@@ -1,0 +1,62 @@
+fcbin
+-----
+
+Uridecodebin 의 combiner 역할을 위임받은 bin 으로서,
+3D dual stream, 다중 자막 등의 multiple output flow 를 유연하게
+제어하기 위해 개발되었습니다.
+
+요구사항:
+
+ - playbin 및 기존 combiner(input-selector) 와의 호환성
+ - stream block 을 통한, pipeline 의 자원 점유 가능 유무 제공
+ - funnel element 를 통한, multiple output 지원
+
+Components
+----------
+
+* input-selector
+ - 단일 stream output 제공
+ - track change 기능 제공
+ - language 등의 tag 정보 제공
+
+* funnel
+ - 동시에 여러 stream output 을 제공
+ - input-selector 와 동일하게 tag 정보 제공
+
+playbin 및 combiner(input-selector)와 다른점
+--------------------------------------------
+
+ - fcbin 에서 combiner(input-selector/funnel)의 선택 로직을 제어
+ - stream block 기능을 통해, sink element 구동 이전에
+   데이터 흐름에 대한 제어가 가능
+ - funnel 에 대한 호환성 제공 및 multiple output 가능
+
+Stream Block
+------------
+Uridecodebin 의 pad-add 와 no-more-pad 를 기점으로, fcbin 의 sinkpad를
+생성 및 block 을 enable/disable 합니다.
+반복적인 caps-notify 를 통해, 적절한 combiner 를 생성 및 srcpad 에 block 을 하며,
+fcbin 내 모든 srcpad 가 만들어 지면, srcpad 의 block 을 한꺼번에 해제합니다.
+이 후, 자원 점유 가능 여부를 판단 후에, lpsink 로 모든 스트림이 공급됩니다.
+
+element-configured signal
+-------------------------
+fcbin 에서 srcpad 가 생성될 때 마다, stream_id 와 sinkpad(combiner)
+정보를 포함하여 element-configured signal 을 lpbin 으로 올려줍니다.
+stream_id 를 통해서는 lpsink 에서 pad block 을 해제할 수 있는 근거로
+사용됩니다. sinkpad(combiner) 를 통해서는 상위 layer 에서 tag 정보를
+사용할 수 있도록 제공해 줍니다.
+
+tag-event handle(funnel)
+------------------------
+funnel 의 경우 input-selector 와 달리 tag 에 대한 정보를 제공하지
+않습니다. 구현된 pad-event 함수를 통해, GST_EVENT_TAG event 를 핸들링하며,
+tag-changed signal 을 lpbin 으로 올려줍니다.
+
+Multi Streams
+-------------
+combiner 로 input-selector 를 사용하게 되면, 하나의 스트림 만
+공급이 가능하게 되며, 여러 스트림을 동시에 공급하지 못합니다.
+이에, caps 정보를 통해 multiple-stream 속성을 확인하여, funnel 을
+생성합니다. funnel 의 경우, 여러 입력 스트림을 하나의 srcpad 로 출력하며,
+multiple streams output 을 가능하게 합니다.
