@@ -1,0 +1,62 @@
+lpsink
+------
+
+stream의 특성에 맞는 sink element을 포함한 chain을 구성하는 bin으로서,
+playsink 보다 유연한 chain을 구성하기 위해서 개발되었습니다.
+
+요구사항:
+
+ - Hardware Decoder/Renderer Element 지원
+ - Multiple stream 대응 가능한 chain 구성
+
+Components
+----------
+
+* streamiddemux
+ - stream-id 를 기반으로 하나의 funneling된 입력 스트림을 여러개의
+   출력 스트림으로 분리하는 기능 제공
+
+* queue
+ - streamiddemux를 통해 분리된 스트림을 block 기능을 통해 한번에
+   chain 구성하는 기능 제공
+
+* sink chain bin
+ - Sink 와 queue element가 포함된 bin
+ - input stream에 따라서 video/audio/text/av chain으로 구성
+
+Playsink와 다른점
+----------------
+
+- 총 2번의 stream block 기능 제공
+  - lpsink의 ghostpad(sink)
+  - queue의 srcpad
+- Video/audio/text 각각 N개의 stream 대응 가능
+- UHD를 위한 Video & Audio가 결합된 av chain 구성 가능
+
+Multi Streams
+-------------
+여러 개의 트랙을 가진 스트림을 동시에 별도의 sink element에 공급하고자 할 때
+사용하는 기능으로 다음과 같은 경우가 있습니다.
+
+- 3D Dual stream
+- multiple output (e.g. subtitle)
+
+fcbin의 funnel이 여러개의 stream을 하나의 srcpad를 통해 공급하고 lpsink에서는
+streamiddemux가 각각의 stream을 분리하여 대응하는 chain에 공급합니다.
+streamiddemux는 stream-id 정보를 기반으로 대응되는 chain 에 event와 data를 공급해
+줍니다.
+
+Stream Block
+------------
+stream block은 모두 2번 발생합니다. 공급받을 stream에 따라 bin 내부를 구성하는데
+내부 구성을 시작할지 판단할 수 있는 기준을 세울 수 있습니다. stream block이 해제 되기
+전까지 event와 data를 공급하지 않습니다. 발생 시점은 모든 입력 stream에 대응하는 pad의
+요청이 완료되기 전까지, 그리고 streamiddemux를 통해 multi 또는 single stream에
+대응하는 srcpad가 모두 생성될 때까지 입니다.
+
+av(Video & audio) sink chain
+----------------------------
+특정 hardware와 컨텐츠를 재생하기 위해서 video와 audio가 결합된 pipeline을 구성합니다.
+입력을 여러 개 받을 수 있는 multi-sink element로 video stream의 pad를 먼저 연결합니다.
+multi-sink 내부적으로 특수한 pipeline을 생성할지 결정을 하며, audio stream의 pad의
+연결 가능 여부에 따라 av sink chain을 구성할지 판단할 수 있습니다.
