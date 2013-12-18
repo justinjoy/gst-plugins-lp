@@ -147,6 +147,9 @@ gst_lp_tsink_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
   g_signal_connect (t_group->appsink, "new-sample",
       G_CALLBACK (gst_lp_tsink_bin_new_sample), NULL);
 
+  /* disable async enable */
+  gst_base_sink_set_async_enabled (t_group->appsink, FALSE);
+
   gst_element_set_state (t_group->appsink, GST_STATE_READY);
 
   gst_bin_add (GST_BIN_CAST (lptsinkbin), t_group->queue);
