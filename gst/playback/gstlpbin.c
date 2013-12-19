@@ -1152,7 +1152,7 @@ no_more_pads_cb_from_fcbin (GstElement * fcbin, GstLpBin * lpbin)
   g_object_get (lpbin->fcbin, "n-audio", &n_audio, NULL);
   g_object_get (lpbin->fcbin, "n-text", &n_text, NULL);
 
-  GST_DEBUG_OBJECT (lpbin,
+  GST_INFO_OBJECT (lpbin,
       "building caps for streams-ready signal, v=%d, a=%d, t=%d", n_video,
       n_audio, n_text);
 

@@ -79,7 +79,11 @@ struct _GstFCBin
 
   gint nb_streams;
   gint nb_current_stream;
+  gint nb_video;
+  gint nb_audio;
+  gint nb_text;
 
+  GPtrArray *sinkpads;
   GHashTable *caps_pairs;
 };
 
