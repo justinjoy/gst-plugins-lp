@@ -681,7 +681,7 @@ notify_tags_cb (GObject * object, GParamSpec * pspec, gpointer user_data)
   gint signal;
 
   GST_DEBUG_OBJECT (ntdata->fcbin,
-      "notify_tags_cb : ntdata->type = %d, ntdata->stream_id = %d",
+      "ntdata->type = %d, ntdata->stream_id = %d",
       ntdata->type, ntdata->stream_id);
 
   switch (ntdata->type) {
@@ -859,7 +859,7 @@ gst_fc_bin_do_configure (GstFCBin * fcbin, GstPad * ghost_sinkpad,
       if (fcbin->nb_streams != -1
           && fcbin->nb_streams == fcbin->nb_current_stream) {
 
-        GST_INFO_OBJECT (fcbin, "gst_fc_bin_do_configure : emit no-more-pads");
+        GST_INFO_OBJECT (fcbin, "emit no-more-pads");
         gst_element_no_more_pads (GST_ELEMENT (fcbin));
 
         if (fcbin->video_srcpad) {
@@ -881,7 +881,7 @@ gst_fc_bin_do_configure (GstFCBin * fcbin, GstPad * ghost_sinkpad,
   g_free (stream_id);
 }
 
-gint
+static gint
 get_type (gchar * caps_str)
 {
   gint type = -1;
@@ -914,8 +914,7 @@ caps_notify_cb (GstPad * pad, GParamSpec * unused, GstFCBin * fcbin)
 
   if (gst_ghost_pad_get_target (GST_GHOST_PAD (pad)) != NULL) {
     GST_DEBUG_OBJECT (fcbin,
-        "caps_notify_cb : pad = %s already has target",
-        GST_DEBUG_PAD_NAME (pad));
+        "pad = %s already has target", GST_DEBUG_PAD_NAME (pad));
     goto done;
   }
 
@@ -924,12 +923,11 @@ caps_notify_cb (GstPad * pad, GParamSpec * unused, GstFCBin * fcbin)
   caps_str = gst_caps_to_string (caps);
   stream_id = gst_pad_get_stream_id (pad);
 
-  GST_INFO_OBJECT (fcbin, "caps_notify_cb : caps = %s, stream_id = %s",
-      caps_str, stream_id);
+  GST_INFO_OBJECT (fcbin, "caps = %s, stream_id = %s", caps_str, stream_id);
 
   type = get_type (caps_str);
 
-  if (!g_hash_table_contains (fcbin->caps_pairs, g_strdup (stream_id))) {
+  if (!g_hash_table_contains (fcbin->caps_pairs, stream_id)) {
     GST_FC_BIN_LOCK (fcbin);
     g_hash_table_insert (fcbin->caps_pairs, g_strdup (stream_id),
         gst_caps_ref (caps));
@@ -941,8 +939,7 @@ caps_notify_cb (GstPad * pad, GParamSpec * unused, GstFCBin * fcbin)
         g_value_get_boolean (gst_structure_get_value (s, "multiple-stream"));
   }
 
-  GST_INFO_OBJECT (fcbin, "caps_notify_cb : multiple_stream = %d",
-      multiple_stream);
+  GST_INFO_OBJECT (fcbin, "multiple_stream = %d", multiple_stream);
 
   GST_FC_BIN_LOCK (fcbin);
   if (fcbin->sinkpads != NULL) {
@@ -961,10 +958,11 @@ caps_notify_cb (GstPad * pad, GParamSpec * unused, GstFCBin * fcbin)
   GST_FC_BIN_UNLOCK (fcbin);
 
 done:
-  if (caps_str)
-    g_free (caps_str);
   if (caps)
     gst_caps_unref (caps);
+
+  g_free (stream_id);
+  g_free (caps_str);
 }
 
 static GstPad *
@@ -1100,8 +1098,7 @@ gst_fc_bin_unblock_sinkpads (GstFCBin * fcbin)
   gulong block_id;
 
   fcbin->nb_streams = fcbin->nb_video + fcbin->nb_audio + fcbin->nb_text;
-  GST_INFO_OBJECT (fcbin, "gst_fc_bin_unblock_sinkpads : nb_stream = %d",
-      fcbin->nb_streams);
+  GST_INFO_OBJECT (fcbin, "nb_stream = %d", fcbin->nb_streams);
 
   itret = gst_iterator_next (it, &item);
   if (itret == GST_ITERATOR_OK) {
@@ -1125,15 +1122,17 @@ gst_fc_bin_src_query (GstPad * pad, GstObject * parent, GstQuery * query)
   GstStructure *s = NULL;
   const gchar *stream_id = NULL;
   GstCaps *caps = NULL;
+  gchar *caps_str;
 
   if (GST_QUERY_TYPE (query) == GST_QUERY_CUSTOM) {
     s = gst_query_writable_structure (query);
     if (gst_structure_has_name (s, "get-caps-by-streamid") && fcbin->caps_pairs) {
       stream_id = gst_structure_get_string (s, "stream-id");
       caps = g_hash_table_lookup (fcbin->caps_pairs, stream_id);
+      caps_str = gst_caps_to_string (caps);
       GST_INFO_OBJECT (fcbin,
-          "gst_fc_bin_query : GST_QUERY_CUSTOM, stream-id:%s, caps:%s",
-          stream_id, gst_caps_to_string (caps));
+          "GST_QUERY_CUSTOM (stream-id:%s, caps:%s)", stream_id, caps_str);
+      g_free (caps_str);
       gst_structure_id_set (s, g_quark_from_static_string ("caps"),
           GST_TYPE_CAPS, caps, NULL);
       ret = TRUE;
@@ -1153,18 +1152,7 @@ gst_fc_bin_change_state (GstElement * element, GstStateChange transition)
   GstFCBin *fcbin;
 
   fcbin = GST_FC_BIN (element);
-/*
-  switch (transition) {
-    case GST_STATE_CHANGE_NULL_TO_READY:
-      break;
-    case GST_STATE_CHANGE_READY_TO_PAUSED:
-      break;
-    case GST_STATE_CHANGE_READY_TO_NULL:
-      break;
-    default:
-      break;
-  }
-*/
+
   ret = GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
 
   if (ret == GST_STATE_CHANGE_FAILURE)
@@ -1173,44 +1161,6 @@ gst_fc_bin_change_state (GstElement * element, GstStateChange transition)
     case GST_STATE_CHANGE_PAUSED_TO_READY:
       gst_fc_bin_reset (fcbin);
       break;
-/*
-    case GST_STATE_CHANGE_READY_TO_NULL:
-    {
-      GstIterator *it;
-      GstPad *fcbin_sinkpad;
-      gboolean done = FALSE;
-      GValue item = { 0, };
-      gchar *fcbin_sinkpad_name;
-
-      GST_FC_BIN_LOCK (fcbin);
-      it = gst_element_iterate_sink_pads (fcbin);
-
-      while (!done) {
-        switch (gst_iterator_next (it, &item)) {
-          case GST_ITERATOR_OK:
-            fcbin_sinkpad = g_value_get_object (&item);
-            fcbin_sinkpad_name = GST_PAD_NAME (fcbin_sinkpad);
-            gst_fc_bin_release_pad (fcbin, fcbin_sinkpad);
-            g_value_reset (&item);
-            break;
-          case GST_ITERATOR_RESYNC:
-            gst_iterator_resync (it);
-            break;
-          case GST_ITERATOR_ERROR:
-            done = TRUE;
-            break;
-          case GST_ITERATOR_DONE:
-            done = TRUE;
-            break;
-        }
-      }
-      g_free (fcbin_sinkpad_name);
-      g_value_unset (&item);
-      gst_iterator_free (it);
-      GST_FC_BIN_UNLOCK (fcbin);
-      break;
-    }
-*/
     default:
       break;
   }
