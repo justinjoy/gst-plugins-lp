@@ -91,6 +91,8 @@ struct _GstLpSink
   gboolean audio_only;
   gboolean need_async_start;
   gboolean async_pending;
+
+  gdouble rate;
 };
 
 struct _GstLpSinkClass

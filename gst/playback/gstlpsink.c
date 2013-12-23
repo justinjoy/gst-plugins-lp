@@ -96,6 +96,7 @@ static void gst_lp_sink_release_request_pad (GstElement * element,
 static gboolean gst_lp_sink_send_event (GstElement * element, GstEvent * event);
 static gboolean gst_lp_sink_send_event_to_sink (GstLpSink * lpsink,
     GstEvent * event);
+static gboolean gst_lp_sink_query (GstElement * element, GstQuery * query);
 static GstStateChangeReturn gst_lp_sink_change_state (GstElement * element,
     GstStateChange transition);
 
@@ -215,6 +216,7 @@ gst_lp_sink_class_init (GstLpSinkClass * klass)
   gstelement_klass->change_state = GST_DEBUG_FUNCPTR (gst_lp_sink_change_state);
 
   gstelement_klass->send_event = GST_DEBUG_FUNCPTR (gst_lp_sink_send_event);
+  gstelement_klass->query = GST_DEBUG_FUNCPTR (gst_lp_sink_query);
   gstelement_klass->request_new_pad =
       GST_DEBUG_FUNCPTR (gst_lp_sink_request_new_pad);
   gstelement_klass->release_pad =
@@ -258,6 +260,8 @@ gst_lp_sink_init (GstLpSink * lpsink)
   lpsink->video_chains = NULL;
   lpsink->audio_chains = NULL;
   lpsink->text_chains = NULL;
+
+  lpsink->rate = 0.0;
 }
 
 static void
@@ -1370,7 +1374,16 @@ gst_lp_sink_send_event (GstElement * element, GstEvent * event)
   switch (event_type) {
     case GST_EVENT_SEEK:
       GST_DEBUG_OBJECT (element, "Sending event to a sink");
+      gdouble rate;
       res = gst_lp_sink_send_event_to_sink (lpsink, event);
+      if (res) {
+        gst_event_parse_seek (event, &rate, NULL, NULL, NULL, NULL, NULL, NULL);
+        if (lpsink->rate != rate) {
+          lpsink->rate = rate;
+          GST_INFO_OBJECT (lpsink,
+              "GST_EVENT_SEEK, set playrate %lf" G_GUINT64_FORMAT, rate);
+        }
+      }
       break;
     default:
       res = GST_ELEMENT_CLASS (parent_class)->send_event (element, event);
@@ -1404,6 +1417,29 @@ gst_lp_sink_send_event_to_sink (GstLpSink * lpsink, GstEvent * event)
 done:
   gst_event_unref (event);
   return res;
+}
+
+static gboolean
+gst_lp_sink_query (GstElement * element, GstQuery * query)
+{
+  GstLpSink *lpsink = GST_LP_SINK (element);
+  gboolean ret;
+
+  if (GST_QUERY_TYPE (query) == GST_QUERY_POSITION && lpsink->video_sink
+      && ABS ((gint64) lpsink->rate) >= 4) {
+    GST_INFO_OBJECT (lpsink,
+        "GST_QUERY_POSITION, trying to get current pts from vdecsink");
+    guint64 current_pts = 0;
+    GstFormat format;
+    gst_query_parse_position (query, &format, NULL);
+    g_object_get (lpsink->video_sink, "current-pts", &current_pts, NULL);
+    gst_query_set_position (query, format, current_pts);
+    ret = TRUE;
+  } else {
+    ret = GST_ELEMENT_CLASS (parent_class)->query (element, query);
+  }
+
+  return ret;
 }
 
 static gboolean
