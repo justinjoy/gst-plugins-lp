@@ -573,8 +573,8 @@ gen_video_chain (GstLpSink * lpsink, GstSinkChain * vchain)
 
   queue_srcpad = gst_element_get_static_pad (vchain->queue, "src");
 
-  if (!gst_pad_link_full (queue_srcpad, video_sink_sinkpad,
-          GST_PAD_LINK_CHECK_TEMPLATE_CAPS)) {
+  if (gst_pad_link_full (queue_srcpad, video_sink_sinkpad,
+          GST_PAD_LINK_CHECK_TEMPLATE_CAPS) != GST_PAD_LINK_OK) {
     GST_WARNING_OBJECT (vchain->queue,
         "failed to link video sink behind queue");
     goto link_failed;           // FIXME: vchain->bin should be treated properly
