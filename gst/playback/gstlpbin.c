@@ -785,7 +785,7 @@ gst_lp_bin_query (GstElement * element, GstQuery * query)
       klass = gst_element_factory_get_klass (factory);
       gst_query_parse_duration (query, &format, NULL);
 
-      if (g_strrstr (klass, "Source/Network") && format == GST_FORMAT_BYTES) {
+      if (format == GST_FORMAT_BYTES) {
         GST_DEBUG_OBJECT (lpbin,
             "source element will directly answer for BYTE format duration query.");
         ret = gst_element_query (lpbin->source, query);
