@@ -939,6 +939,9 @@ caps_notify_cb (GstPad * pad, GParamSpec * unused, GstFCBin * fcbin)
         g_value_get_boolean (gst_structure_get_value (s, "multiple-stream"));
   }
 
+  if (type == GST_LP_SINK_TYPE_TEXT)
+    multiple_stream = TRUE;
+
   GST_INFO_OBJECT (fcbin, "multiple_stream = %d", multiple_stream);
 
   GST_FC_BIN_LOCK (fcbin);
