@@ -591,16 +591,17 @@ gst_lp_bin_bus_cb (GstBus * bus, GstMessage * message, gpointer data)
 {
   GstLpBin *lpbin = (GstLpBin *) data;
 
+  GST_DEBUG_OBJECT (lpbin, "src = %s, msg type = %s",
+      GST_MESSAGE_SRC_NAME (message), GST_MESSAGE_TYPE_NAME (message));
+
   switch (GST_MESSAGE_TYPE (message)) {
     case GST_MESSAGE_STATE_CHANGED:
-      GST_DEBUG_OBJECT (lpbin,
-          "gst_lp_bin_bus_cb : GST_MESSAGE_STATE_CHANGED, element name = %s",
-          GST_OBJECT_NAME (GST_MESSAGE_SRC (message)));
+    {
       GstState oldstate, newstate, pending;
       gst_message_parse_state_changed (message, &oldstate, &newstate, &pending);
 
       GST_DEBUG_OBJECT (lpbin,
-          "gst_lp_bin_bus_cb : GST_MESSAGE_STATE_CHANGED, state-changed: %s -> %s, pending-state = %s",
+          "state %s -> %s, pending-state = %s",
           gst_element_state_get_name (oldstate),
           gst_element_state_get_name (newstate),
           gst_element_state_get_name (pending));
@@ -615,28 +616,18 @@ gst_lp_bin_bus_cb (GstBus * bus, GstMessage * message, gpointer data)
         elem = GST_ELEMENT (GST_MESSAGE_SRC (message));
         factory = gst_element_get_factory (elem);
         klass = gst_element_factory_get_klass (factory);
-        elem_name = gst_element_get_name (elem);
 
-        if (lpbin->thumbnail_mode && g_strrstr (klass, "Demux")) {
-          GST_DEBUG_OBJECT (lpbin,
-              "gst_lp_bin_bus_cb : GST_MESSAGE_STATE_CHANGED, element_name = %s",
-              elem_name);
+        if (lpbin->thumbnail_mode && g_strrstr (klass, "Demux")
+            && g_object_class_find_property (G_OBJECT_GET_CLASS (elem),
+                "thumbnail-mode"))
+          g_object_set (elem, "thumbnail-mode", lpbin->thumbnail_mode, NULL);
 
-          if (g_object_class_find_property (G_OBJECT_GET_CLASS (elem),
-                  "thumbnail-mode"))
-            g_object_set (elem, "thumbnail-mode", lpbin->thumbnail_mode, NULL);
-          else
-            GST_WARNING_OBJECT (lpbin,
-                "gst_lp_bin_bus_cb : GST_MESSAGE_STATE_CHANGED, %s doesn't thumbnail-mode property.",
-                elem_name);
-
-        }
-
-        if (elem_name)
-          g_free (elem_name);
       }
+    }
       break;
+
   }
+
   return TRUE;
 }
 
@@ -817,8 +808,7 @@ gst_lp_bin_retrieve_thumbnail (GstLpBin * lpbin, gint width, gint height,
     gchar * format)
 {
   GST_INFO_OBJECT (lpbin,
-      "retrieve_thumbnail : width = %d, height = %d, format = %s", width,
-      height, format);
+      "width = %d, height = %d, format = %s", width, height, format);
   GstBuffer *result = NULL;
   GstCaps *caps;
 
@@ -836,11 +826,11 @@ gst_lp_bin_retrieve_thumbnail (GstLpBin * lpbin, gint width, gint height,
       "format", G_TYPE_STRING, format,
       "pixel-aspect-ratio", GST_TYPE_FRACTION, 1, 1, NULL);
 
-  GST_DEBUG_OBJECT (lpbin, "retrieve_thumbnail : video_sink name = %s",
+  GST_DEBUG_OBJECT (lpbin, "video_sink name = %s",
       GST_ELEMENT_NAME (lpbin->video_sink));
   g_signal_emit_by_name (G_OBJECT (lpbin->video_sink), "convert-frame", caps,
       &result);
-  GST_DEBUG_OBJECT (lpbin, "retrieve_thumbnail : result = %p", result);
+  GST_DEBUG_OBJECT (lpbin, "result = %p", result);
   gst_caps_unref (caps);
   return result;
 }
@@ -1083,7 +1073,7 @@ no_more_pads_cb (GstElement * decodebin, GstLpBin * lpbin)
     if (g_object_class_find_property (G_OBJECT_GET_CLASS (lpbin->lpsink),
             "audio-only"))
       g_object_set (lpbin->lpsink, "audio-only", TRUE, NULL);
-    GST_INFO_OBJECT (lpbin, "no more pads callback : audio-only set as TRUE");
+    GST_INFO_OBJECT (lpbin, "audio-only set as TRUE");
   }
 
   if (lpbin->fcbin) {
@@ -1099,7 +1089,7 @@ pad_added_cb_from_fcbin (GstElement * fcbin, GstPad * pad, GstLpBin * lpbin)
   guint type = -1;
 
   type = (guintptr) g_object_get_data (G_OBJECT (pad), "type");
-  GST_INFO_OBJECT (lpbin, "padd added cb from fcbin : type = %d", type);
+  GST_INFO_OBJECT (lpbin, "type = %d", type);
 
   if (gst_pad_get_direction (pad) == GST_PAD_SRC) {
     if (type == GST_LP_SINK_TYPE_VIDEO) {
@@ -1229,9 +1219,7 @@ foreach_check_blocked (gpointer key, gpointer value, gpointer user_data)
   gboolean blocked = (gboolean) value;
   GstLpBin *lpbin = (GstLpBin *) user_data;
 
-  GST_INFO_OBJECT (lpbin,
-      "foreach_check_blocked : stream_id = %s, blocked = %d", stream_id,
-      blocked);
+  GST_INFO_OBJECT (lpbin, "stream_id = %s, blocked = %d", stream_id, blocked);
   if (blocked == FALSE) {
     lpbin->all_pads_blocked = FALSE;
   }
@@ -1267,8 +1255,7 @@ element_configured_cb (GstElement * fcbin, gint type, GstPad * sinkpad,
 {
   GstPad *lpsink_sinkpad = NULL;
 
-  GST_INFO_OBJECT (lpbin, "element_configured_cb : type = %d, stream_id = %s",
-      type, stream_id);
+  GST_INFO_OBJECT (lpbin, "type = %d, stream_id = %s", type, stream_id);
 
   if (lpbin->stream_id_blocked == NULL) {
     lpbin->stream_id_blocked = g_hash_table_new (g_str_hash, g_str_equal);
@@ -1280,13 +1267,13 @@ element_configured_cb (GstElement * fcbin, gint type, GstPad * sinkpad,
     GST_OBJECT_UNLOCK (lpbin);
   }
   if (type == GST_LP_SINK_TYPE_AUDIO) {
-    GST_INFO_OBJECT (lpbin, "element_configured_cb : AUDIO");
+    GST_INFO_OBJECT (lpbin, "AUDIO");
     g_ptr_array_add (lpbin->audio_channels, sinkpad);
   } else if (type == GST_LP_SINK_TYPE_VIDEO) {
-    GST_INFO_OBJECT (lpbin, "element_configured_cb : VIDEO");
+    GST_INFO_OBJECT (lpbin, "VIDEO");
     g_ptr_array_add (lpbin->video_channels, sinkpad);
   } else if (type == GST_LP_SINK_TYPE_TEXT) {
-    GST_INFO_OBJECT (lpbin, "element_configured_cb : TEXT");
+    GST_INFO_OBJECT (lpbin, "TEXT");
     g_ptr_array_add (lpbin->text_channels, sinkpad);
   }
 }
@@ -1294,7 +1281,6 @@ element_configured_cb (GstElement * fcbin, gint type, GstPad * sinkpad,
 static void
 notify_source_cb (GstElement * decodebin, GParamSpec * pspec, GstLpBin * lpbin)
 {
-  GST_DEBUG_OBJECT (lpbin, "notify_source_cb");
   GstElement *source;
 
   g_object_get (lpbin->uridecodebin, "source", &source, NULL);
@@ -1667,8 +1653,6 @@ autoplug_continue_signal (GstElement * element, GstPad * pad, GstCaps * caps,
   GstElement *elem = NULL;
   gboolean result;
 
-  GST_LOG_OBJECT (lpbin, "autoplug_continue_notify");
-
   g_signal_emit (lpbin,
       gst_lp_bin_signals[SIGNAL_AUTOPLUG_CONTINUE], 0, pad, caps, &result);
 
@@ -1853,7 +1837,6 @@ gst_lp_bin_autoplug_continue (GstElement * element, GstPad * pad,
   GstElement *sink;
   GstPad *sinkpad = NULL;
   GstLpBin *lpbin = GST_LP_BIN_CAST (element);
-  GST_LOG_OBJECT (lpbin, "gst_lp_bin_autoplug_continue");
 
   GST_OBJECT_LOCK (lpbin);
 
@@ -2053,7 +2036,7 @@ gst_lp_bin_do_property_set (GstLpBin * lpbin, GstElement * element)
 static void
 audio_tags_changed_cb (GstElement * fcbin, gint stream_id, GstLpBin * lpbin)
 {
-  GST_DEBUG_OBJECT (lpbin, "audio_tags_changed_cb : stream_id = %d", stream_id);
+  GST_DEBUG_OBJECT (lpbin, "stream_id = %d", stream_id);
 
   g_signal_emit (G_OBJECT (lpbin),
       gst_lp_bin_signals[SIGNAL_AUDIO_TAGS_CHANGED], 0, stream_id);
@@ -2062,7 +2045,7 @@ audio_tags_changed_cb (GstElement * fcbin, gint stream_id, GstLpBin * lpbin)
 static void
 video_tags_changed_cb (GstElement * fcbin, gint stream_id, GstLpBin * lpbin)
 {
-  GST_DEBUG_OBJECT (lpbin, "video_tags_changed_cb : stream_id = %d", stream_id);
+  GST_DEBUG_OBJECT (lpbin, "stream_id = %d", stream_id);
 
   g_signal_emit (G_OBJECT (lpbin),
       gst_lp_bin_signals[SIGNAL_VIDEO_TAGS_CHANGED], 0, stream_id);
@@ -2071,7 +2054,7 @@ video_tags_changed_cb (GstElement * fcbin, gint stream_id, GstLpBin * lpbin)
 static void
 text_tags_changed_cb (GstElement * fcbin, gint stream_id, GstLpBin * lpbin)
 {
-  GST_DEBUG_OBJECT (lpbin, "text_tags_changed_cb : stream_id = %d", stream_id);
+  GST_DEBUG_OBJECT (lpbin, "stream_id = %d", stream_id);
 
   g_signal_emit (G_OBJECT (lpbin),
       gst_lp_bin_signals[SIGNAL_TEXT_TAGS_CHANGED], 0, stream_id);
