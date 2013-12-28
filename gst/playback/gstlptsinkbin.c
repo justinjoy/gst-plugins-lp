@@ -143,7 +143,8 @@ gst_lp_tsink_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
     goto fail;
   }
 
-  g_object_set (t_group->appsink, "emit-signals", TRUE, NULL);
+  g_object_set (t_group->appsink, "emit-signals", TRUE, "sync", FALSE,
+      "ts-offset", 1000 * 1000, NULL);
   g_signal_connect (t_group->appsink, "new-sample",
       G_CALLBACK (gst_lp_tsink_bin_new_sample), NULL);
 
