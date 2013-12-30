@@ -433,13 +433,25 @@ gen_audio_chain (GstLpSink * lpsink, GstSinkChain * chain)
   GstBin *bin = NULL;
   GstPad *queue_sinkpad = NULL;
   GstElement *sink_element = NULL;
+  const gchar *elem_name = NULL;
 
   chain->lpsink = lpsink;
 
   if (lpsink->thumbnail_mode)
-    sink_element = gst_element_factory_make ("fakesink", NULL);
+    elem_name = "fakesink";
   else
-    sink_element = gst_element_factory_make ("adecsink", NULL);
+    elem_name = "adecsink";
+
+  sink_element = gst_element_factory_make (elem_name, NULL);
+  if (sink_element == NULL) {
+    gchar *msg =
+        g_strdup_printf ("missing element '%s' - check your environment",
+        elem_name);
+    GST_ELEMENT_ERROR (lpsink, CORE, MISSING_PLUGIN, (msg),
+        ("gen_audio_chain fail"));
+    g_free (msg);
+    return NULL;
+  }
 
   g_object_set (sink_element, "mixer",
       (lpsink->audio_resource & (1 << 31)), NULL);
@@ -515,6 +527,12 @@ gen_video_chain (GstLpSink * lpsink, GstSinkChain * vchain)
   vchain->lpsink = lpsink;
 
   sink_element = gst_element_factory_make ("vdecsink", NULL);
+  if (sink_element == NULL) {
+    GST_ELEMENT_ERROR (lpsink, CORE, MISSING_PLUGIN,
+        ("missing element 'vdecsink' - check your environment"),
+        ("gen_video_chain fail"));
+    return NULL;
+  }
   //TODO: thumbnail case handling
   if (lpsink->thumbnail_mode
       && g_object_class_find_property (G_OBJECT_GET_CLASS (sink_element),
@@ -872,6 +890,9 @@ gst_lp_sink_do_reconfigure (GstLpSink * lpsink)
       continue;
 
     chain = gen_video_chain (lpsink, chain);
+    if (chain == NULL)
+      break;
+
     add_chain (chain, TRUE);
     activate_chain (chain, TRUE);
 
@@ -894,7 +915,10 @@ gst_lp_sink_do_reconfigure (GstLpSink * lpsink)
   for (item = g_list_first (lpsink->audio_chains); item; item = item->next) {
     chain = (GstSinkChain *) item->data;
 
-    gen_audio_chain (lpsink, chain);
+    chain = gen_audio_chain (lpsink, chain);
+    if (chain == NULL)
+      break;
+
     add_chain (chain, TRUE);
     activate_chain (chain, TRUE);
 
