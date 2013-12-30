@@ -57,6 +57,7 @@ static void gst_lp_tsink_bin_release_request_pad (GstElement * element,
 static gboolean activate_chain (GstElement * sink, GstTextGroup * tgoup,
     gboolean activate);
 static GstFlowReturn gst_lp_tsink_bin_new_sample (GstElement * sink);
+static gboolean gst_lp_tsink_bin_query (GstElement * element, GstQuery * query);
 
 G_DEFINE_TYPE (GstLpTSinkBin, gst_lp_tsink_bin, GST_TYPE_BIN);
 
@@ -87,6 +88,7 @@ gst_lp_tsink_bin_class_init (GstLpTSinkBinClass * klass)
       GST_DEBUG_FUNCPTR (gst_lp_tsink_bin_request_new_pad);
   gstelement_klass->release_pad =
       GST_DEBUG_FUNCPTR (gst_lp_tsink_bin_release_request_pad);
+  gstelement_klass->query = GST_DEBUG_FUNCPTR (gst_lp_tsink_bin_query);
 }
 
 static void
@@ -253,4 +255,22 @@ gst_lp_tsink_bin_new_sample (GstElement * sink)
   //gst_sample_unref (sample);
 
   return GST_FLOW_OK;
+}
+
+
+static gboolean
+gst_lp_tsink_bin_query (GstElement * element, GstQuery * query)
+{
+  gboolean ret = TRUE;
+
+  switch (GST_QUERY_TYPE (query)) {
+    case GST_QUERY_POSITION:
+      return FALSE;
+    default:
+      break;
+  }
+
+  ret = GST_ELEMENT_CLASS (parent_class)->query (element, query);
+
+  return ret;
 }
