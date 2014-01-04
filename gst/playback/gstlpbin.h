@@ -100,7 +100,7 @@ struct _GstLpBin
   gboolean thumbnail_mode;
   gboolean pending_thumbnail;
   gboolean use_buffering;
-  gboolean use_resource_manager;
+  gboolean use_stream_lock;
 
   guint video_resource;
   guint audio_resource;
@@ -164,6 +164,8 @@ struct _GstLpBinClass
   GstPad *(*get_video_pad) (GstLpBin * lpbin, gint stream);
   GstPad *(*get_audio_pad) (GstLpBin * lpbin, gint stream);
   GstPad *(*get_text_pad) (GstLpBin * lpbin, gint stream);
+
+  gboolean (*stream_unlock) (GstLpBin * lpbin);
 };
 
 enum

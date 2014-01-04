@@ -61,7 +61,7 @@ enum
   PROP_BUFFER_SIZE,
   PROP_BUFFER_DURATION,
   PROP_INTERLEAVING_TYPE,
-  PROP_USE_RESOURCE_MANAGER,
+  PROP_USE_STREAM_LOCK,
   PROP_LAST
 };
 
@@ -82,6 +82,7 @@ enum
   SIGNAL_GET_AUDIO_PAD,
   SIGNAL_GET_TEXT_PAD,
   SIGNAL_STREAMS_READY,
+  SIGNAL_STREAM_UNLOCK,
   LAST_SIGNAL
 };
 
@@ -90,7 +91,7 @@ enum
 #define DEFAULT_BUFFER_DURATION   -1
 #define DEFAULT_BUFFER_SIZE       -1
 
-#define DEFAULT_USE_RESOURCE_MANAGER FALSE
+#define DEFAULT_USE_STREAM_LOCK FALSE
 
 /* GstObject overriding */
 static void gst_lp_bin_class_init (GstLpBinClass * klass);
@@ -159,6 +160,7 @@ static GValueArray *gst_lp_bin_autoplug_factories (GstElement * element,
 static void gst_lp_bin_deactive (GstLpBin * lpbin);
 static GstBuffer *gst_lp_bin_retrieve_thumbnail (GstLpBin * lpbin, gint width,
     gint height, gchar * format);
+static gboolean gst_lp_bin_stream_unlock (GstLpBin * lpbin);
 static void gst_lp_bin_set_thumbnail_mode (GstLpBin * lpbin,
     gboolean thumbnail_mode);
 static void gst_lp_bin_set_interleaving_type (GstLpBin * lpbin,
@@ -332,11 +334,6 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
           "Acquired audio resource.(the most significant bit - 0: ADEC, 1: MIX / the remains - channel number)",
           0, G_MAXUINT, 0, G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
 
-  g_object_class_install_property (gobject_klass, PROP_USE_RESOURCE_MANAGER,
-      g_param_spec_boolean ("use-resource-manager", "Use Resource Manager",
-          "Enable a feature working with resource manager", FALSE,
-          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
   /**
    * GstLpBin::smart-properties:
    *
@@ -368,6 +365,16 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
       g_param_spec_int ("interleaving-type", "Interleaving type",
           "Interleaving type uses for vdecsink",
           0, 2147483647, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  /**
+   *  GstLpBin::stream-lock:
+   *
+   *  Perform streaming lock before completing state transition.
+   */
+  g_object_class_install_property (gobject_klass, PROP_USE_STREAM_LOCK,
+      g_param_spec_boolean ("use-stream-lock", "Use stream lock",
+          "set use-stream-lock property for stream handling",
+          DEFAULT_USE_STREAM_LOCK, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   gst_lp_bin_signals[SIGNAL_ABOUT_TO_FINISH] =
       g_signal_new ("about-to-finish", G_TYPE_FROM_CLASS (klass),
@@ -567,8 +574,15 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
   gst_lp_bin_signals[SIGNAL_STREAMS_READY] =
       g_signal_new ("streams-ready", G_TYPE_FROM_CLASS (klass),
       G_SIGNAL_RUN_LAST, 0, NULL, NULL,
-      g_cclosure_marshal_generic, G_TYPE_NONE, 3,
-      G_TYPE_VALUE_ARRAY, G_TYPE_VALUE_ARRAY, G_TYPE_VALUE_ARRAY);
+      g_cclosure_marshal_generic, G_TYPE_NONE, 6,
+      G_TYPE_PTR_ARRAY, G_TYPE_PTR_ARRAY, G_TYPE_PTR_ARRAY,
+      G_TYPE_INT, G_TYPE_INT, G_TYPE_INT);
+
+  gst_lp_bin_signals[SIGNAL_STREAM_UNLOCK] =
+      g_signal_new ("stream-unlock", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
+      G_STRUCT_OFFSET (GstLpBinClass, stream_unlock), NULL, NULL,
+      g_cclosure_marshal_generic, G_TYPE_BOOLEAN, 0);
 
   gstelement_klass->change_state = GST_DEBUG_FUNCPTR (gst_lp_bin_change_state);
   gstelement_klass->query = GST_DEBUG_FUNCPTR (gst_lp_bin_query);
@@ -585,6 +599,8 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
   klass->get_video_pad = GST_DEBUG_FUNCPTR (gst_lp_bin_get_video_pad);
   klass->get_audio_pad = GST_DEBUG_FUNCPTR (gst_lp_bin_get_audio_pad);
   klass->get_text_pad = GST_DEBUG_FUNCPTR (gst_lp_bin_get_text_pad);
+
+  klass->stream_unlock = GST_DEBUG_FUNCPTR (gst_lp_bin_stream_unlock);
 }
 
 static gboolean
@@ -677,7 +693,7 @@ gst_lp_bin_init (GstLpBin * lpbin)
   lpbin->thumbnail_mode = DEFAULT_THUMBNAIL_MODE;
   lpbin->pending_thumbnail = FALSE;
   lpbin->use_buffering = DEFAULT_USE_BUFFERING;
-  lpbin->use_resource_manager = DEFAULT_USE_RESOURCE_MANAGER;
+  lpbin->use_stream_lock = DEFAULT_USE_STREAM_LOCK;
 
   lpbin->video_resource = 0;
   lpbin->audio_resource = 0;
@@ -775,8 +791,6 @@ gst_lp_bin_query (GstElement * element, GstQuery * query)
 
   switch (GST_QUERY_TYPE (query)) {
     case GST_QUERY_DURATION:
-      factory = gst_element_get_factory (lpbin->source);
-      klass = gst_element_factory_get_klass (factory);
       gst_query_parse_duration (query, &format, NULL);
 
       if (format == GST_FORMAT_BYTES) {
@@ -836,6 +850,21 @@ gst_lp_bin_retrieve_thumbnail (GstLpBin * lpbin, gint width, gint height,
   GST_DEBUG_OBJECT (lpbin, "result = %p", result);
   gst_caps_unref (caps);
   return result;
+}
+
+static gboolean
+gst_lp_bin_stream_unlock (GstLpBin * lpbin)
+{
+  g_assert (lpbin->use_stream_lock);
+  g_assert (lpbin->lpsink);
+
+  gboolean ret = FALSE;
+
+  g_signal_emit_by_name (lpbin->lpsink, "unblock-sinkpads", &ret, NULL);
+  GST_LOG_OBJECT (lpbin, "received unblock-sinkpads result=%d by signal action",
+      ret);
+
+  return ret;
 }
 
 static void
@@ -904,8 +933,8 @@ gst_lp_bin_set_property (GObject * object, guint prop_id,
             lpbin->audio_resource);
       }
       break;
-    case PROP_USE_RESOURCE_MANAGER:
-      lpbin->use_resource_manager = g_value_get_boolean (value);
+    case PROP_USE_STREAM_LOCK:
+      lpbin->use_stream_lock = g_value_get_boolean (value);
       break;
     case PROP_SMART_PROPERTIES:
       gst_lp_bin_set_property_table (lpbin, g_value_get_string (value));
@@ -1034,8 +1063,8 @@ gst_lp_bin_get_property (GObject * object, guint prop_id, GValue * value,
     case PROP_INTERLEAVING_TYPE:
       g_value_set_int (value, lpbin->interleaving_type);
       break;
-    case PROP_USE_RESOURCE_MANAGER:
-      g_value_set_boolean (value, lpbin->use_resource_manager);
+    case PROP_USE_STREAM_LOCK:
+      g_value_set_boolean (value, lpbin->use_stream_lock);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -1139,12 +1168,15 @@ pad_added_cb_from_fcbin (GstElement * fcbin, GstPad * pad, GstLpBin * lpbin)
 static void
 no_more_pads_cb_from_fcbin (GstElement * fcbin, GstLpBin * lpbin)
 {
-  GValueArray *video_caps = g_value_array_new (0);
-  GValueArray *audio_caps = g_value_array_new (0);
-  GValueArray *text_caps = g_value_array_new (0);
+  GPtrArray *video_caps = g_ptr_array_new ();
+  GPtrArray *audio_caps = g_ptr_array_new ();
+  GPtrArray *text_caps = g_ptr_array_new ();
   gint n_video = 0;
   gint n_audio = 0;
   gint n_text = 0;
+  gint cur_video = -1;
+  gint cur_audio = -1;
+  gint cur_text = -1;
   GstIterator *it = NULL;
   gboolean ret = FALSE;
   gboolean it_done = FALSE;
@@ -1153,15 +1185,16 @@ no_more_pads_cb_from_fcbin (GstElement * fcbin, GstLpBin * lpbin)
   if (!lpbin->lpsink)
     goto no_lpsink;
 
-  g_signal_emit_by_name (lpbin->lpsink, "unblock-sinkpads", &ret, NULL);
-  GST_LOG_OBJECT (lpbin, "received unblock-sinkpads result=%d", ret);
-
   if (!lpbin->fcbin)
     goto no_fcbin;
 
   g_object_get (lpbin->fcbin, "n-video", &n_video, NULL);
   g_object_get (lpbin->fcbin, "n-audio", &n_audio, NULL);
   g_object_get (lpbin->fcbin, "n-text", &n_text, NULL);
+
+  g_object_get (lpbin->fcbin, "current-video", &cur_video, NULL);
+  g_object_get (lpbin->fcbin, "current-audio", &cur_audio, NULL);
+  g_object_get (lpbin->fcbin, "current-text", &cur_text, NULL);
 
   GST_INFO_OBJECT (lpbin,
       "building caps for streams-ready signal, v=%d, a=%d, t=%d", n_video,
@@ -1176,24 +1209,22 @@ no_more_pads_cb_from_fcbin (GstElement * fcbin, GstLpBin * lpbin)
     GstCaps *caps = NULL;
     gchar *caps_str = NULL;
     GValue val = { 0, };
+
     switch (gst_iterator_next (it, &item)) {
       case GST_ITERATOR_OK:
         sinkpad = g_value_get_object (&item);
         caps = gst_pad_get_current_caps (sinkpad);
         caps_str = gst_caps_to_string (caps);
 
-        g_value_init (&val, G_TYPE_OBJECT);
-        g_value_set_object (&val, caps);
-
         if (g_str_has_prefix (caps_str, "video")
             || g_str_has_prefix (caps_str, "image")) {
-          video_caps = g_value_array_append (video_caps, &val);
+          g_ptr_array_add (video_caps, caps);
         } else if (g_str_has_prefix (caps_str, "audio")) {
-          audio_caps = g_value_array_append (audio_caps, &val);
+          g_ptr_array_add (audio_caps, caps);
         } else if (g_str_has_prefix (caps_str, "text/")
             || g_str_has_prefix (caps_str, "application/")
             || g_str_has_prefix (caps_str, "subpicture/")) {
-          text_caps = g_value_array_append (text_caps, &val);
+          g_ptr_array_add (text_caps, caps);
         }
 
         g_value_reset (&item);
@@ -1208,19 +1239,32 @@ no_more_pads_cb_from_fcbin (GstElement * fcbin, GstLpBin * lpbin)
         it_done = TRUE;
         break;
     }
-    g_value_unset (&val);
   }
 
   g_value_unset (&item);
   gst_iterator_free (it);
 
-  g_assert (n_video == video_caps->n_values);
-  g_assert (n_audio == audio_caps->n_values);
-  g_assert (n_text == text_caps->n_values);
+  g_assert (n_video == video_caps->len);
+  g_assert (n_audio == audio_caps->len);
+  g_assert (n_text == text_caps->len);
+
+  // FIXME: this function has too many roles.
+  // When detecting no_more_pad from fcbin, unlocking pads of lpsink is sufficient.
+  // However, the next logic is required in order to support resource manager mechanism.
+  // It's doubt whether the logic is located here.
+  if (lpbin->use_stream_lock)
+    goto emit_streams_ready;
+
+  g_signal_emit_by_name (lpbin->lpsink, "unblock-sinkpads", &ret, NULL);
+  GST_DEBUG_OBJECT (lpbin, "received unblock-sinkpads result=%d", ret);
 
 done:
-  g_signal_emit_by_name (lpbin, "streams-ready", &video_caps, &audio_caps,
-      &text_caps, NULL);
+  g_ptr_array_foreach (video_caps, (GFunc) gst_caps_unref, NULL);
+  g_ptr_array_foreach (audio_caps, (GFunc) gst_caps_unref, NULL);
+  g_ptr_array_foreach (text_caps, (GFunc) gst_caps_unref, NULL);
+  g_ptr_array_free (video_caps, TRUE);
+  g_ptr_array_free (audio_caps, TRUE);
+  g_ptr_array_free (text_caps, TRUE);
   return;
 
 no_lpsink:
@@ -1231,6 +1275,11 @@ no_fcbin:
   GST_ERROR_OBJECT (lpbin, "*CANNOT* detect fcbin, check object lifecycle");
   goto done;
 
+emit_streams_ready:
+  g_signal_emit_by_name (lpbin, "streams-ready", video_caps, audio_caps,
+      text_caps, cur_video, cur_audio, cur_text, NULL);
+  GST_DEBUG_OBJECT (lpbin, "stream-lock is enabled, streams-ready is emitted");
+  return;
 }
 
 static void
@@ -1619,7 +1668,6 @@ static GstElement *
 gst_lp_bin_get_current_sink (GstLpBin * lpbin, GstElement ** elem,
     const gchar * dbg, GstLpSinkType type)
 {
-
   g_return_val_if_fail ((lpbin->lpsink != NULL), NULL);
 
   GstElement *sink = gst_lp_sink_get_sink (lpbin->lpsink, type);
