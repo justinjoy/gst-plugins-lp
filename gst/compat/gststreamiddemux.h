@@ -1,9 +1,9 @@
 /*
  * GStreamer streamiddemux eleement
  *
- * Copyright 2013 LGE Corporation.
+ * Copyright 2013-2014 LG Electronics, Inc.
  *  @author: HoonHee Lee <hoonhee.lee@lge.com>
- *  @author: JeongSeok Kim  <jeongseok.kim@lge.com>
+ *  @author: Jeongseok Kim  <jeongseok.kim@lge.com>
  *  @author: WonChul Lee  <wonchul86.lee@lge.com>
  *
  * gststreamiddemux.h: Simple stream-id-demultiplexer element

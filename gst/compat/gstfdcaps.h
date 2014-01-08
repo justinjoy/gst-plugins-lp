@@ -1,5 +1,6 @@
 /* GStreamer Lightweight Playback Plugins
- * Copyright (C) 2013 LG Electronics.
+ *
+ * Copyright (C) 2013-2014 LG Electronics, Inc.
  *  Author : Jeongseok Kim <jeongseok.kim@lge.com>
  *
  * This library is free software; you can redistribute it and/or

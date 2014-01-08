@@ -1,6 +1,6 @@
 /* GStreamer streamiddemux element
  *
- * Copyright 2013 LGE Corporation.
+ * Copyright 2013-2014 LG Electronics, Inc.
  *  @author: HoonHee Lee <hoonhee.lee@lge.com>
  *  @author: Jeongseok Kim <jeongseok.kim@lge.com>
  *  @author: Wonchul Lee <wonchul86.lee@lge.com>
