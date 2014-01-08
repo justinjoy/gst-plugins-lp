@@ -326,7 +326,7 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
 
   g_object_class_install_property (gobject_klass, PROP_VIDEO_RESOURCE,
       g_param_spec_uint ("video-resource", "Acquired video resource",
-          "Acquired vidio resource", 0, 2, 0,
+          "Acquired vidio resource", 0, G_MAXUINT, 0,
           G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property (gobject_klass, PROP_AUDIO_RESOURCE,
@@ -861,8 +861,8 @@ gst_lp_bin_stream_unlock (GstLpBin * lpbin)
   gboolean ret = FALSE;
 
   g_signal_emit_by_name (lpbin->lpsink, "unblock-sinkpads", &ret, NULL);
-  GST_LOG_OBJECT (lpbin, "received unblock-sinkpads result=%d by signal action",
-      ret);
+  GST_INFO_OBJECT (lpbin,
+      "received unblock-sinkpads result=%d by signal action", ret);
 
   return ret;
 }
@@ -1278,7 +1278,7 @@ no_fcbin:
 emit_streams_ready:
   g_signal_emit_by_name (lpbin, "streams-ready", video_caps, audio_caps,
       text_caps, cur_video, cur_audio, cur_text, NULL);
-  GST_DEBUG_OBJECT (lpbin, "stream-lock is enabled, streams-ready is emitted");
+  GST_INFO_OBJECT (lpbin, "stream-lock is enabled, streams-ready is emitted");
   return;
 }
 
