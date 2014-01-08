@@ -94,6 +94,9 @@ struct _GstLpSink
   gboolean async_pending;
 
   gdouble rate;
+
+  guint nb_video;
+  guint nb_audio;
 };
 
 struct _GstLpSinkClass
@@ -112,6 +115,20 @@ typedef enum
   GST_LP_SINK_TYPE_LAST = 9,
   GST_LP_SINK_TYPE_FLUSHING = 10
 } GstLpSinkType;
+
+enum
+{
+  GST_VDEC_CH0_REQUIRED = 1,
+  GST_VDEC_CH1_REQUIRED,
+  GST_VDEC_CH0_CH1_REQUIRED
+};
+
+enum
+{
+  GST_ADEC_CH0_REQUIRED = 1,
+  GST_ADEC_CH1_REQUIRED,
+  GST_ADEC_CH0_CH1_REQUIRED
+};
 
 struct _GstSinkChain
 {
