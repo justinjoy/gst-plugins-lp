@@ -681,6 +681,8 @@ gst_lp_bin_init (GstLpBin * lpbin)
 
   lpbin->video_resource = 0;
   lpbin->audio_resource = 0;
+  lpbin->pending_video_resource = FALSE;
+  lpbin->pending_audio_resource = FALSE;
 
   g_rw_lock_init (&lock);
   lpbin->property_pairs = NULL;
@@ -876,13 +878,31 @@ gst_lp_bin_set_property (GObject * object, guint prop_id,
       break;
     case PROP_VIDEO_RESOURCE:
       lpbin->video_resource = g_value_get_uint (value);
-      GST_DEBUG_OBJECT (lpbin, "setting video resource [%x]",
-          lpbin->video_resource);
+
+      if (lpbin->lpsink) {
+        g_object_set (lpbin->lpsink, "video-resource", lpbin->video_resource,
+            NULL);
+        GST_DEBUG_OBJECT (lpbin, "setting video resource [%x]",
+            lpbin->video_resource);
+      } else {
+        lpbin->pending_video_resource = TRUE;
+        GST_DEBUG_OBJECT (lpbin, "pending video resource property set[%x]",
+            lpbin->video_resource);
+      }
       break;
     case PROP_AUDIO_RESOURCE:
       lpbin->audio_resource = g_value_get_uint (value);
-      GST_DEBUG_OBJECT (lpbin, "setting audio resource [%x]",
-          lpbin->audio_resource);
+
+      if (lpbin->lpsink) {
+        g_object_set (lpbin->lpsink, "audio-resource", lpbin->audio_resource,
+            NULL);
+        GST_DEBUG_OBJECT (lpbin, "setting audio resource [%x]",
+            lpbin->audio_resource);
+      } else {
+        lpbin->pending_audio_resource = TRUE;
+        GST_DEBUG_OBJECT (lpbin, "pending audio resource property set[%x]",
+            lpbin->audio_resource);
+      }
       break;
     case PROP_USE_RESOURCE_MANAGER:
       lpbin->use_resource_manager = g_value_get_boolean (value);
@@ -1433,17 +1453,17 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
   /* 
    * FIXME: These are not compatible with multi-sink support.
    */
-  if (g_object_class_find_property (G_OBJECT_GET_CLASS (lpbin->lpsink),
-          "video-resource")) {
+  if (lpbin->pending_video_resource) {
     g_object_set (lpbin->lpsink, "video-resource", lpbin->video_resource, NULL);
-  } else {
-    GST_WARNING_OBJECT (lpbin, "lpsink doesn't video-resource property.");
+    lpbin->pending_video_resource = FALSE;
   }
 
-  g_object_set (lpbin->lpsink, "audio-resource", lpbin->audio_resource, NULL);
+  if (lpbin->pending_audio_resource) {
+    g_object_set (lpbin->lpsink, "audio-resource", lpbin->video_resource, NULL);
+    lpbin->pending_audio_resource = FALSE;
+  }
 
   gst_bin_add (GST_BIN_CAST (lpbin), lpbin->lpsink);
-
 
   g_object_unref (fd_caps);
 

@@ -104,6 +104,8 @@ struct _GstLpBin
 
   guint video_resource;
   guint audio_resource;
+  gboolean pending_video_resource;
+  gboolean pending_audio_resource;
 
   /* This table contains property name and value */
   GHashTable *property_pairs;
