@@ -15,7 +15,6 @@ TESTS_ENVIRONMENT = \
 	GST_PLUGIN_LOADING_WHITELIST="gstreamer:gst-plugins-base@$(top_builddir)" \
 	GST_TAG_LICENSE_TRANSLATIONS_DICT="$(top_srcdir)/gst-libs/gst/tag/license-translations.dict"
 
-
 # ths core dumps of some machines have PIDs appended
 CLEANFILES = core.* test-registry.*
 
@@ -30,7 +29,9 @@ STATE_IGNORE_ELEMENTS =
 TESTS = $(check_PROGRAMS)
 
 check_PROGRAMS = \
-	elements/dynamicappsrc
+	elements/dynamicappsrc \
+	elements/streamiddemux \
+	elements/lpbin
 
 # these tests don't even pass
 noinst_PROGRAMS =
@@ -56,3 +57,18 @@ elements_dynamicappsrc_CFLAGS = \
 
 elements_dynamicappsrc_LDADD = \
 	$(LDADD)
+
+elements_streamiddemux_CFLAGS = \
+	$(GST_PLUGINS_BASE_CFLAGS) \
+	$(AM_CFLAGS)
+
+elements_streamiddemux_LDADD = \
+	$(LDADD)
+
+elements_lpbin_CFLAGS = \
+	$(GST_PLUGINS_BASE_CFLAGS) \
+	$(AM_CFLAGS)
+
+elements_lpbin_LDADD = \
+	$(LDADD)
+

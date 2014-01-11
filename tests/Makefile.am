@@ -17,3 +17,4 @@ SUBDIRS = 			\
 DIST_SUBDIRS = 			\
 	check			\
 	examples
+

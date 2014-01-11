@@ -10,6 +10,10 @@ AG_GST_INIT
 
 AM_INIT_AUTOMAKE([-Wno-portability 1.11 no-dist-gzip dist-xz tar-ustar])
 
+dnl *** required versions of GStreamer stuff ***
+GST_REQ=1.0.5
+GSTPB_REQ=1.0.5
+
 dnl required versions of gstreamer and plugins-base
 GST_REQUIRED=1.0.0
 GSTPB_REQUIRED=1.0.0

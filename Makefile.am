@@ -11,6 +11,11 @@ DISTCLEANFILES = _stdint.h
 
 ACLOCAL_AMFLAGS = -I m4 -I common/m4
 
+check-valgrind:
+	cd tests/check && make check-valgrind
+
+check: check-exports
+
 include $(top_srcdir)/common/release.mak
 include $(top_srcdir)/common/po.mak
 
