@@ -170,7 +170,7 @@ gst_lp_sink_class_init (GstLpSinkClass * klass)
 
   g_object_class_install_property (gobject_klass, PROP_VIDEO_RESOURCE,
       g_param_spec_uint ("video-resource", "Acquired video resource",
-          "Acquired video resource", 0, G_MAXUINT, 0,
+          "Acquired video resource", 0, 2, 0,
           G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property (gobject_klass, PROP_AUDIO_RESOURCE,
@@ -263,9 +263,6 @@ gst_lp_sink_init (GstLpSink * lpsink)
   lpsink->text_chains = NULL;
 
   lpsink->rate = 0.0;
-
-  lpsink->nb_video = 0;
-  lpsink->nb_audio = 0;
 }
 
 static void
@@ -438,7 +435,6 @@ gen_audio_chain (GstLpSink * lpsink, GstSinkChain * chain)
   GstPad *queue_sinkpad = NULL;
   GstElement *sink_element = NULL;
   const gchar *elem_name = NULL;
-  guint adec_ch = 0;
 
   chain->lpsink = lpsink;
 
@@ -457,20 +453,6 @@ gen_audio_chain (GstLpSink * lpsink, GstSinkChain * chain)
     g_free (msg);
     return NULL;
   }
-
-  if ((lpsink->audio_resource & 0x0F) == GST_ADEC_CH0_REQUIRED
-      || (lpsink->audio_resource & 0x0F) == GST_ADEC_CH0_CH1_REQUIRED) {
-    adec_ch = 0;
-  } else if ((lpsink->video_resource & 0x0F) == GST_ADEC_CH1_REQUIRED) {
-    adec_ch = 1;
-  }
-
-  if (lpsink->nb_audio > 1) {
-    adec_ch = lpsink->nb_audio_bin;
-  }
-
-  GST_INFO_OBJECT (sink_element, "adec_ch = %d", adec_ch);
-  g_object_set (sink_element, "channel", adec_ch, NULL);
 
   g_object_set (sink_element, "mixer",
       (lpsink->audio_resource & (1 << 31)), NULL);
@@ -542,7 +524,6 @@ gen_video_chain (GstLpSink * lpsink, GstSinkChain * vchain)
   GstPad *video_sink_sinkpad = NULL;
   GstPad *audio_sink_sinkpad = NULL;
   GList *item = NULL;
-  guint vdec_ch = 0;
 
   vchain->lpsink = lpsink;
 
@@ -572,19 +553,9 @@ gen_video_chain (GstLpSink * lpsink, GstSinkChain * vchain)
         NULL);
   }
 
-  if ((lpsink->video_resource & 0x0F) == GST_VDEC_CH0_REQUIRED
-      || (lpsink->video_resource & 0x0F) == GST_VDEC_CH0_CH1_REQUIRED) {
-    vdec_ch = 0;
-  } else if ((lpsink->video_resource & 0x0F) == GST_VDEC_CH1_REQUIRED) {
-    vdec_ch = 1;
-  }
-
-  if (lpsink->nb_video > 1) {
-    vdec_ch = lpsink->nb_video_bin;
-  }
-
-  GST_INFO_OBJECT (sink_element, "vdec_ch = %d", vdec_ch);
-  g_object_set (sink_element, "vdec-ch", vdec_ch, NULL);
+  GST_DEBUG_OBJECT (sink_element,
+      "Passing vdec ch property[%x] into vdecsink", lpsink->video_resource);
+  g_object_set (sink_element, "vdec-ch", lpsink->video_resource, NULL);
 
   vchain->sink = try_element (lpsink, sink_element, TRUE);
 
@@ -867,11 +838,9 @@ pad_added_cb (GstElement * element, GstPad * pad, GstLpSink * lpsink)
   if (element == lpsink->video_streamid_demux) {
     chain->type = GST_LP_SINK_TYPE_VIDEO;
     lpsink->video_chains = g_list_append (lpsink->video_chains, chain);
-    lpsink->nb_video++;
   } else if (element == lpsink->audio_streamid_demux) {
     chain->type = GST_LP_SINK_TYPE_AUDIO;
     lpsink->audio_chains = g_list_append (lpsink->audio_chains, chain);
-    lpsink->nb_audio++;
   } else if (element == lpsink->text_streamid_demux) {
     chain->type = GST_LP_SINK_TYPE_TEXT;
     lpsink->text_chains = g_list_append (lpsink->text_chains, chain);

@@ -326,7 +326,7 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
 
   g_object_class_install_property (gobject_klass, PROP_VIDEO_RESOURCE,
       g_param_spec_uint ("video-resource", "Acquired video resource",
-          "Acquired vidio resource", 0, G_MAXUINT, 0,
+          "Acquired vidio resource", 0, 2, 0,
           G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property (gobject_klass, PROP_AUDIO_RESOURCE,
