@@ -1508,7 +1508,7 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
   }
 
   if (lpbin->pending_audio_resource) {
-    g_object_set (lpbin->lpsink, "audio-resource", lpbin->video_resource, NULL);
+    g_object_set (lpbin->lpsink, "audio-resource", lpbin->audio_resource, NULL);
     lpbin->pending_audio_resource = FALSE;
   }
 
