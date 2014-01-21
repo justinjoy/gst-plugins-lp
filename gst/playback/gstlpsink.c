@@ -263,6 +263,8 @@ gst_lp_sink_init (GstLpSink * lpsink)
   lpsink->text_chains = NULL;
 
   lpsink->rate = 0.0;
+
+  lpsink->unsupported_pipeline = FALSE;
 }
 
 static void
@@ -564,8 +566,14 @@ gen_video_chain (GstLpSink * lpsink, GstSinkChain * vchain)
       "sink_%d");
   video_sink_sinkpad =
       gst_element_request_pad (vchain->sink, tmpl, NULL, vchain->caps);
-  //video_sink_sinkpad = gst_element_get_static_pad (vchain->sink, "sink");
-  GST_WARNING_OBJECT (lpsink, "caps = %s", gst_caps_to_string (vchain->caps));
+
+  //FIXME: If sinkpad of vdecsink is eqaul to NULL, it assumed pipeline is broken
+  if (!video_sink_sinkpad) {
+    gst_element_set_state (vchain->sink, GST_STATE_NULL);
+    lpsink->unsupported_pipeline = TRUE;
+    vchain->sink = NULL;
+    goto vdec_error;
+  }
 
   /* configure av sink chain if audio_sinkpad is exist */
   if (lpsink->audio_chains && (item = g_list_first (lpsink->audio_chains))) {
@@ -613,6 +621,11 @@ link_failed:
   gst_object_unref (video_sink_sinkpad);
 
   return vchain;
+
+vdec_error:
+  GST_ERROR_OBJECT (lpsink,
+      "fail to request pad for video sinkpad of vdecsink");
+  return NULL;
 }
 
 static GstSinkChain *
@@ -891,8 +904,12 @@ gst_lp_sink_do_reconfigure (GstLpSink * lpsink)
       continue;
 
     chain = gen_video_chain (lpsink, chain);
+    if (lpsink->unsupported_pipeline)
+      return;
+
     if (chain == NULL)
       break;
+
 
     add_chain (chain, TRUE);
     activate_chain (chain, TRUE);
@@ -1593,6 +1610,12 @@ gst_lp_sink_change_state (GstElement * element, GstStateChange transition)
         while (walk) {
           GstSinkChain *chain = (GstSinkChain *) walk->data;
 
+          //FIXME: do not destroy chain when fail to generate sink chain
+          if (!chain->sink) {
+            walk = g_list_next (walk);
+            continue;
+          }
+
           if (chain->type == GST_LP_SINK_TYPE_AV) {
             gst_ghost_pad_set_target (GST_GHOST_PAD_CAST (GST_AV_SINK_CHAIN
                     (chain)->video_ghostpad), NULL);
@@ -1637,6 +1660,12 @@ gst_lp_sink_change_state (GstElement * element, GstStateChange transition)
 
         while (walk) {
           GstSinkChain *chain = (GstSinkChain *) walk->data;
+
+          //FIXME: do not destroy chain when fail to generate sink chain
+          if (!chain->sink) {
+            walk = g_list_next (walk);
+            continue;
+          }
 
           gst_ghost_pad_set_target (GST_GHOST_PAD_CAST (chain->bin_ghostpad),
               NULL);
