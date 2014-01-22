@@ -47,7 +47,7 @@ if test -d po ; then
   touch -t 200001010000 po/gstreamer-1.0.pot
 fi
 
-CONFIGURE_DEF_OPT='--enable-maintainer-mode --enable-gtk-doc'
+CONFIGURE_DEF_OPT='--enable-maintainer-mode --enable-gtk-doc --disable-examples'
 
 if test "x$package" = "xgstreamer"; then
   CONFIGURE_DEF_OPT="$CONFIGURE_DEF_OPT --enable-docbook --enable-failing-tests --enable-poisoning"

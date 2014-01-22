@@ -67,6 +67,17 @@ AG_GST_ARG_PROFILING
 AG_GST_ARG_VALGRIND
 AG_GST_ARG_GCOV
 
+AG_GST_ARG_EXAMPLES
+
+AG_GST_ARG_WITH_PKG_CONFIG_PATH
+AG_GST_ARG_WITH_PACKAGE_NAME
+AG_GST_ARG_WITH_PACKAGE_ORIGIN
+
+AG_GST_PKG_CONFIG_PATH
+
+dnl Check for a way to display the function name in debug output
+AG_GST_CHECK_FUNCTION
+
 dnl check for tools (compiler etc.)
 AC_PROG_CC
 
@@ -78,6 +89,22 @@ dnl give error and exit if we don't have pkgconfig
 AC_CHECK_PROG(HAVE_PKGCONFIG, pkg-config, [ ], [
 AC_MSG_ERROR([You need to have pkg-config installed!])
 ])
+
+AG_GST_CHECK_GST_CHECK($GST_API_VERSION, [$GST_REQ], no)
+AM_CONDITIONAL(HAVE_GST_CHECK, test "x$HAVE_GST_CHECK" = "xyes")
+
+dnl check for documentation tools
+GTK_DOC_CHECK([1.12])
+
+dnl GTK is optional and only used in examples
+HAVE_GTK=no
+HAVE_GTK_X11=no
+
+AM_CONDITIONAL(HAVE_GTK, test "x$HAVE_GTK" = "xyes")
+AM_CONDITIONAL(HAVE_GTK_X11, test "x$HAVE_GTK_X11" = "xyes")
+
+AC_PATH_PROG(VALGRIND_PATH, valgrind, no)
+AM_CONDITIONAL(HAVE_VALGRIND, test ! "x$VALGRIND_PATH" = "xno")
 
 dnl Check for the required version of GStreamer core (and gst-plugins-base)
 dnl This will export GST_CFLAGS and GST_LIBS variables for use in Makefile.am
@@ -170,6 +197,7 @@ gst/Makefile
 gst/compat/Makefile
 gst/playback/Makefile
 tests/Makefile
+tests/check/Makefile
 m4/Makefile
 )
 AC_OUTPUT
