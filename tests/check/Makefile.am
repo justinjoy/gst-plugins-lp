@@ -29,7 +29,7 @@ STATE_IGNORE_ELEMENTS =
 TESTS = $(check_PROGRAMS)
 
 check_PROGRAMS = \
-	elements/dynamicappsrc \
+	elements/dynappsrc \
 	elements/httpextbin \
 	elements/streamiddemux \
 	elements/lpbin
@@ -54,11 +54,11 @@ LDADD = $(GST_LIBS) $(GST_CHECK_LIBS)
 # valgrind testing
 VALGRIND_TESTS_DISABLE = $(VALGRIND_TO_FIX)
 
-elements_dynamicappsrc_CFLAGS = \
+elements_dynappsrc_CFLAGS = \
 	$(GST_PLUGINS_BASE_CFLAGS) \
 	$(AM_CFLAGS)
 
-elements_dynamicappsrc_LDADD = \
+elements_dynappsrc_LDADD = \
 	$(LDADD)
 
 elements_streamiddemux_CFLAGS = \
