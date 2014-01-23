@@ -263,6 +263,8 @@ gst_lp_sink_init (GstLpSink * lpsink)
   lpsink->text_chains = NULL;
 
   lpsink->rate = 0.0;
+
+  lpsink->unsupported_pipeline = FALSE;
 }
 
 static void
@@ -564,8 +566,13 @@ gen_video_chain (GstLpSink * lpsink, GstSinkChain * vchain)
       "sink_%d");
   video_sink_sinkpad =
       gst_element_request_pad (vchain->sink, tmpl, NULL, vchain->caps);
-  //video_sink_sinkpad = gst_element_get_static_pad (vchain->sink, "sink");
-  GST_WARNING_OBJECT (lpsink, "caps = %s", gst_caps_to_string (vchain->caps));
+
+  if (!video_sink_sinkpad) {
+    lpsink->unsupported_pipeline = TRUE;
+    gst_element_set_state (vchain->sink, GST_STATE_NULL);
+    vchain->sink = NULL;
+    goto unsupported_pipeline;
+  }
 
   /* configure av sink chain if audio_sinkpad is exist */
   if (lpsink->audio_chains && (item = g_list_first (lpsink->audio_chains))) {
@@ -613,6 +620,12 @@ link_failed:
   gst_object_unref (video_sink_sinkpad);
 
   return vchain;
+
+unsupported_pipeline:
+  GST_ELEMENT_ERROR (lpsink, STREAM, DECODE,
+      ("unsupported stream input to video sink"), ("gen_video_chain fail"));
+
+  return NULL;
 }
 
 static GstSinkChain *
@@ -891,6 +904,10 @@ gst_lp_sink_do_reconfigure (GstLpSink * lpsink)
       continue;
 
     chain = gen_video_chain (lpsink, chain);
+    /* video sink configuration fail, stopping construct pipieline */
+    if (lpsink->unsupported_pipeline)
+      return;
+
     if (chain == NULL)
       break;
 
@@ -1593,6 +1610,12 @@ gst_lp_sink_change_state (GstElement * element, GstStateChange transition)
         while (walk) {
           GstSinkChain *chain = (GstSinkChain *) walk->data;
 
+          //FIXME: destroy chain when fail to construct pipeline
+          if (!chain->sink) {
+            walk = g_list_next (walk);
+            continue;
+          }
+
           if (chain->type == GST_LP_SINK_TYPE_AV) {
             gst_ghost_pad_set_target (GST_GHOST_PAD_CAST (GST_AV_SINK_CHAIN
                     (chain)->video_ghostpad), NULL);
@@ -1637,6 +1660,12 @@ gst_lp_sink_change_state (GstElement * element, GstStateChange transition)
 
         while (walk) {
           GstSinkChain *chain = (GstSinkChain *) walk->data;
+
+          //FIXME: destroy chain when fail to construct pipeline
+          if (!chain->sink) {
+            walk = g_list_next (walk);
+            continue;
+          }
 
           gst_ghost_pad_set_target (GST_GHOST_PAD_CAST (chain->bin_ghostpad),
               NULL);

@@ -94,6 +94,8 @@ struct _GstLpSink
   gboolean async_pending;
 
   gdouble rate;
+
+  gboolean unsupported_pipeline;
 };
 
 struct _GstLpSinkClass
