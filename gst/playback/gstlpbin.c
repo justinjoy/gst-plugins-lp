@@ -1088,9 +1088,7 @@ pad_added_cb (GstElement * decodebin, GstPad * pad, GstLpBin * lpbin)
 
   tmpl = gst_pad_template_new (name, GST_PAD_SINK, GST_PAD_REQUEST, caps);
 
-  GST_DEBUG_OBJECT (lpbin,
-      "pad %s:%s with caps %" GST_PTR_FORMAT " added",
-      GST_DEBUG_PAD_NAME (pad), caps);
+  GST_DEBUG_OBJECT (pad, "pad with caps %" GST_PTR_FORMAT " added", caps);
 
   fcbin_sinkpad = gst_element_request_pad (lpbin->fcbin, tmpl, name, caps);
   gst_pad_link (pad, fcbin_sinkpad);
@@ -1102,7 +1100,6 @@ pad_added_cb (GstElement * decodebin, GstPad * pad, GstLpBin * lpbin)
   }
 
   g_object_unref (tmpl);
-
 }
 
 /* called when a pad is removed from the uridecodebin. We unlink the pad from
@@ -1952,9 +1949,9 @@ gst_lp_bin_autoplug_continue (GstElement * element, GstPad * pad,
 done:
   GST_OBJECT_UNLOCK (lpbin);
 
-  GST_LOG_OBJECT (lpbin,
-      "continue autoplugging lpbin %p for %s:%s, %" GST_PTR_FORMAT ": %d",
-      lpbin, GST_DEBUG_PAD_NAME (pad), caps, ret);
+  GST_LOG_OBJECT (pad,
+      "continue autoplugging lpbin %p for %" GST_PTR_FORMAT ": %d",
+      lpbin, caps, ret);
 
   return ret;
 }
@@ -1967,8 +1964,7 @@ gst_lp_bin_autoplug_factories (GstElement * element, GstPad * pad,
   GValueArray *result;
   GstLpBin *lpbin = GST_LP_BIN_CAST (element);
 
-  GST_LOG_OBJECT (lpbin, "factories lpbin %p for %s:%s, %" GST_PTR_FORMAT,
-      lpbin, GST_DEBUG_PAD_NAME (pad), caps);
+  GST_LOG_OBJECT (pad, "factories lpbin %p for %" GST_PTR_FORMAT, lpbin, caps);
 
   /* filter out the elements based on the caps. */
   g_mutex_lock (&lpbin->elements_lock);

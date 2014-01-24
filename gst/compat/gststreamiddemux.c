@@ -243,10 +243,8 @@ gst_streamid_demux_get_srcpad_by_stream_id (GstStreamidDemux * demux,
   srcpad = g_hash_table_lookup (demux->stream_id_pairs, stream_id);
   GST_OBJECT_UNLOCK (demux);
 
-  if (srcpad) {
-    GST_DEBUG_OBJECT (demux, "srcpad = %s:%s matched",
-        GST_DEBUG_PAD_NAME (srcpad));
-  }
+  if (srcpad)
+    GST_DEBUG_OBJECT (srcpad, "srcpad matched");
 
 done:
   return srcpad;

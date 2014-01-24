@@ -751,8 +751,7 @@ gst_fc_bin_do_configure (GstFCBin * fcbin, GstPad * ghost_sinkpad,
   } else if (type == GST_LP_SINK_TYPE_TEXT) {
     select = &fcbin->select[GST_FC_BIN_STREAM_TEXT];
   } else {
-    GST_ERROR_OBJECT (fcbin, "unknown type for pad %s",
-        GST_DEBUG_PAD_NAME (ghost_sinkpad));
+    GST_ERROR_OBJECT (ghost_sinkpad, "unknown type for pad");
     return;
   }
 
@@ -913,8 +912,7 @@ caps_notify_cb (GstPad * pad, GParamSpec * unused, GstFCBin * fcbin)
   gulong block_id = 0;
 
   if (gst_ghost_pad_get_target (GST_GHOST_PAD (pad)) != NULL) {
-    GST_DEBUG_OBJECT (fcbin,
-        "pad = %s already has target", GST_DEBUG_PAD_NAME (pad));
+    GST_DEBUG_OBJECT (fcbin, "pad = %s already has target", GST_PAD_NAME (pad));
     goto done;
   }
 
