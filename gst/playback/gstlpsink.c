@@ -1372,25 +1372,10 @@ gst_lp_sink_release_request_pad (GstElement * element, GstPad * pad)
 static void
 gst_lp_sink_handle_message (GstBin * bin, GstMessage * message)
 {
-  GstLpSink *lpsink;
-  lpsink = GST_LP_SINK_CAST (bin);
+//  GstLpSink *lpsink;
+//  lpsink = GST_LP_SINK_CAST (bin);
 
   switch (GST_MESSAGE_TYPE (message)) {
-    case GST_MESSAGE_ASYNC_START:
-    case GST_MESSAGE_ASYNC_DONE:
-    {
-      GstObject *src = GST_OBJECT_CAST (message->src);
-
-
-      /* FIXME: temporary prevent async msg from audio sink */
-      if (g_strrstr (GST_OBJECT_NAME (src), "abin") && !lpsink->audio_only) {
-        GST_DEBUG_OBJECT (lpsink,
-            "Ignoring async state change of abin: %s", GST_OBJECT_NAME (src));
-        gst_message_unref (message);
-        message = NULL;
-        break;
-      }
-    }
     default:
       GST_BIN_CLASS (parent_class)->handle_message (bin, message);
   }
