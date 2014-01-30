@@ -1160,6 +1160,8 @@ gst_fc_bin_change_state (GstElement * element, GstStateChange transition)
 
   if (ret == GST_STATE_CHANGE_FAILURE)
     goto failure;
+
+  GST_FC_BIN_LOCK (fcbin);
   switch (transition) {
     case GST_STATE_CHANGE_PAUSED_TO_READY:
       gst_fc_bin_reset (fcbin);
@@ -1167,12 +1169,10 @@ gst_fc_bin_change_state (GstElement * element, GstStateChange transition)
     default:
       break;
   }
-  return ret;
+  GST_FC_BIN_UNLOCK (fcbin);
 
   /* ERRORS */
 failure:
-  {
-    return ret;
-  }
+  return ret;
 
 }
