@@ -440,7 +440,6 @@ gen_audio_chain (GstLpSink * lpsink, GstSinkChain * chain)
   GstPad *queue_sinkpad = NULL;
   GstElement *sink_element = NULL;
   const gchar *elem_name = NULL;
-  guint adec_ch = 0;
 
   chain->lpsink = lpsink;
 
@@ -459,20 +458,6 @@ gen_audio_chain (GstLpSink * lpsink, GstSinkChain * chain)
     g_free (msg);
     return NULL;
   }
-
-  if ((lpsink->audio_resource & 0x0F) == GST_ADEC_CH0_REQUIRED
-      || (lpsink->audio_resource & 0x0F) == GST_ADEC_CH0_CH1_REQUIRED) {
-    adec_ch = 0;
-  } else if ((lpsink->video_resource & 0x0F) == GST_ADEC_CH1_REQUIRED) {
-    adec_ch = 1;
-  }
-
-  if (lpsink->nb_audio > 1) {
-    adec_ch = lpsink->nb_audio_bin;
-  }
-
-  GST_INFO_OBJECT (sink_element, "adec_ch = %d", adec_ch);
-  g_object_set (sink_element, "channel", adec_ch, NULL);
 
   g_object_set (sink_element, "mixer",
       (lpsink->audio_resource & (1 << 31)), NULL);

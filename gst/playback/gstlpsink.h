@@ -125,13 +125,6 @@ enum
   GST_VDEC_CH0_CH1_REQUIRED
 };
 
-enum
-{
-  GST_ADEC_CH0_REQUIRED = 1,
-  GST_ADEC_CH1_REQUIRED,
-  GST_ADEC_CH0_CH1_REQUIRED
-};
-
 struct _GstSinkChain
 {
   GstBin *bin;
