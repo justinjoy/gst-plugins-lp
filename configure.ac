@@ -213,6 +213,7 @@ gst/Makefile
 gst/compat/Makefile
 gst/playback/Makefile
 gst/httpextbin/Makefile
+gst/dynappsrc/Makefile
 tests/Makefile
 tests/check/Makefile
 tests/examples/Makefile
