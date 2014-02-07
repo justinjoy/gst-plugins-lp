@@ -1,5 +1,5 @@
 SUBDIRS = \
-    compat playback
+    compat playback httpextbin
 
 DIS_SUBDIRS = \
-    compat playback
+    compat playback httpextbin

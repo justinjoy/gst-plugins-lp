@@ -212,6 +212,7 @@ common/m4/Makefile
 gst/Makefile
 gst/compat/Makefile
 gst/playback/Makefile
+gst/httpextbin/Makefile
 tests/Makefile
 tests/check/Makefile
 tests/examples/Makefile
