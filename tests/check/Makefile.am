@@ -11,8 +11,8 @@ TESTS_ENVIRONMENT = \
         GST_STATE_IGNORE_ELEMENTS="$(STATE_IGNORE_ELEMENTS)"	\
 	$(REGISTRY_ENVIRONMENT)					\
 	GST_PLUGIN_SYSTEM_PATH_1_0=				\
-	GST_PLUGIN_PATH_1_0=$(top_builddir)/gst:$(top_builddir)/sys:$(top_builddir)/ext:$(GST_PLUGINS_BASE_DIR):$(GST_PLUGINS_DIR) \
-	GST_PLUGIN_LOADING_WHITELIST="gstreamer@$(GST_PLUGINS_DIR):gst-plugins-base@$(GSTPB_PLUGINS_DIR):gst-plugins-lp@$(top_builddir)" \
+	GST_PLUGIN_PATH_1_0=$(top_builddir)/gst:$(top_builddir)/sys:$(top_builddir)/ext:$(GST_PLUGINS_GOOD_DIR):$(GST_PLUGINS_BASE_DIR):$(GST_PLUGINS_DIR) \
+	GST_PLUGIN_LOADING_WHITELIST="gstreamer@$(GST_PLUGINS_DIR):gst-plugins-base@$(GSTPB_PLUGINS_DIR):gst-plugins-good:gst-plugins-lp@$(top_builddir)" \
 	GST_TAG_LICENSE_TRANSLATIONS_DICT="$(top_srcdir)/gst-libs/gst/tag/license-translations.dict"
 
 # ths core dumps of some machines have PIDs appended
@@ -30,6 +30,7 @@ TESTS = $(check_PROGRAMS)
 
 check_PROGRAMS = \
 	elements/dynamicappsrc \
+	elements/httpextbin \
 	elements/streamiddemux \
 	elements/lpbin
 
@@ -73,4 +74,11 @@ elements_lpbin_CFLAGS = \
 
 elements_lpbin_LDADD = \
 	$(LDADD)
+
+elements_httpextbin_CFLAGS = \
+        $(GST_PLUGINS_BASE_CFLAGS) \
+        $(AM_CFLAGS)
+
+elements_httpextbin_LDADD = \
+        $(LDADD)
 

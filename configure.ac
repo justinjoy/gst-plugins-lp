@@ -94,8 +94,20 @@ AC_CHECK_PROG(HAVE_PKGCONFIG, pkg-config, [ ], [
 AC_MSG_ERROR([You need to have pkg-config installed!])
 ])
 
+dnl checks for gstreamer
+dnl uninstalled is selected preferentially -- see pkg-config(1)
+AG_GST_CHECK_GST($GST_API_VERSION, [$GST_REQ], yes)
+AG_GST_CHECK_GST_BASE($GST_API_VERSION, [$GST_REQ], yes)
 AG_GST_CHECK_GST_CHECK($GST_API_VERSION, [$GST_REQ], no)
+AG_GST_CHECK_GST_CONTROLLER($GST_API_VERSION, [$GST_REQ], yes)
 AM_CONDITIONAL(HAVE_GST_CHECK, test "x$HAVE_GST_CHECK" = "xyes")
+
+AG_GST_CHECK_GST_PLUGINS_BASE($GST_API_VERSION, [$GSTPB_REQ], yes)
+
+dnl check for uninstalled plugin directories for unit tests
+AG_GST_CHECK_UNINSTALLED_SETUP([
+  AG_GST_CHECK_GST_PLUGINS_GOOD($GST_API_VERSION, [0.11.0])
+])
 
 dnl check for documentation tools
 GTK_DOC_CHECK([1.12])
