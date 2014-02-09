@@ -159,6 +159,8 @@ GST_START_TEST (test_set_uri)
   gst_object_unref (httpextbin);
 }
 
+GST_END_TEST;
+
 GST_START_TEST (test_configure_child_element)
 {
   GstElement *httpextbin;
