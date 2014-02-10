@@ -137,7 +137,7 @@ GST_START_TEST (test_set_uri)
   httpextbin = gst_element_factory_make ("httpextbin", NULL);
   fail_unless (httpextbin != NULL, "Could not create httpextbin element");
 
-  for (item = uris; **item != NULL; *item++) {
+  for (item = uris; *item != NULL; *item++) {
     GST_DEBUG ("Try to set uri : %s", *item);
     g_object_set (httpextbin, "uri", *item, NULL);
     g_object_get (httpextbin, "uri", &uri, NULL);
@@ -257,7 +257,7 @@ GST_START_TEST (test_repeat_state_change)
   g_signal_connect (httpextbin, "pad-added",
       G_CALLBACK (httpextbin_pad_added_cb), NULL);
 
-  for (item = uris; **item != NULL; *item++) {
+  for (item = uris; *item != NULL; *item++) {
     GST_DEBUG ("Try to set uri : %s", *item);
     g_object_set (httpextbin, "uri", *item, NULL);
 
