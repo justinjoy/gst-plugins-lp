@@ -41,7 +41,7 @@ struct _GstHttpFilter
 
 static GstStaticPadTemplate filter_sink_templ = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK, GST_PAD_ALWAYS,
-    GST_STATIC_CAPS ("justin")
+    GST_STATIC_CAPS ("justin; jeongseok; hoonhee; wonchul; yongjin")
     );
 
 static GstStaticPadTemplate filter_src_templ = GST_STATIC_PAD_TEMPLATE ("src",
@@ -236,6 +236,50 @@ GST_START_TEST (test_set_state_paused)
 
 GST_END_TEST;
 
+GST_START_TEST (test_repeat_state_change)
+{
+  GstElement *httpextbin;
+
+  const gchar *uris[] =
+      { "http+justin://", "http+jeongseok://", "http+hoonhee://",
+    "http+wonchul://", "http+yongjin://", NULL
+  };
+
+  fail_unless (gst_element_register (NULL, "httpfilter",
+          GST_RANK_PRIMARY + 100, gst_http_filter_get_type ()));
+
+  httpextbin = gst_element_factory_make ("httpextbin", NULL);
+  fail_unless (httpextbin != NULL, "Could not create httpextbin element");
+
+  g_signal_connect (httpextbin, "pad-added",
+      G_CALLBACK (httpextbin_pad_added_cb), NULL);
+
+  for (; *uris != NULL; uris++) {
+    GST_DEBUG ("Try to set uri : %s", *uris);
+    g_object_set (httpextbin, "uri", *uris, NULL);
+
+    // change state to paused
+    fail_unless_equals_int (gst_element_set_state (httpextbin,
+            GST_STATE_PAUSED), GST_STATE_CHANGE_SUCCESS);
+
+    fail_unless_equals_int (gst_element_get_state (httpextbin, NULL, NULL, -1),
+        GST_STATE_CHANGE_SUCCESS);
+
+    // change state to ready
+    fail_unless_equals_int (gst_element_set_state (httpextbin, GST_STATE_READY),
+        GST_STATE_CHANGE_SUCCESS);
+
+    fail_unless_equals_int (gst_element_get_state (httpextbin, NULL, NULL, -1),
+        GST_STATE_CHANGE_SUCCESS);
+  }
+
+  gst_element_set_state (httpextbin, GST_STATE_NULL);
+
+  gst_object_unref (httpextbin);
+}
+
+GST_END_TEST;
+
 static Suite *
 httpextbin_suite (void)
 {
@@ -247,6 +291,7 @@ httpextbin_suite (void)
   tcase_add_test (tc_chain, test_set_uri);
   tcase_add_test (tc_chain, test_missing_plugin);
   tcase_add_test (tc_chain, test_set_state_paused);
+  tcase_add_test (tc_chain, test_repeat_state_change);
 
   suite_add_tcase (s, tc_chain);
 
