@@ -36,7 +36,15 @@ struct _GstHttpExtBin
 {
   GstBin parent;
 
+  GstPad *srcpad;
+
+  GstElement *source_elem;
+  GstElement *filter_elem;
+
   gchar *uri;
+  GstCaps *caps;
+
+  GList *list;                  /* list we can use for selecting elements */
 };
 
 struct _GstHttpExtBinClass
