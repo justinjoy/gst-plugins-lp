@@ -114,7 +114,7 @@ GST_START_TEST (test_uri_interface)
 
   if (uri_protocols && *uri_protocols) {
     for (; *uri_protocols != NULL; uri_protocols++)
-      GST_DEBUG ("Suppiorted URI protocols : %s", *uri_protocols);
+      GST_DEBUG ("Supported URI protocols : %s", *uri_protocols);
   } else {
     fail ("No supported URI protocols");
   }
@@ -129,6 +129,7 @@ GST_START_TEST (test_set_uri)
 {
   GstElement *httpextbin;
   gchar *uri;
+  gchar **item;
 
   const gchar *uris[] =
       { "http+justin://", "http+hoonhee://", "https+wonchul://", NULL };
@@ -136,11 +137,11 @@ GST_START_TEST (test_set_uri)
   httpextbin = gst_element_factory_make ("httpextbin", NULL);
   fail_unless (httpextbin != NULL, "Could not create httpextbin element");
 
-  for (; *uris != NULL; uris++) {
-    GST_DEBUG ("Try to set uri : %s", *uris);
-    g_object_set (httpextbin, "uri", *uris, NULL);
+  for (item = uris; **item != NULL; *item++) {
+    GST_DEBUG ("Try to set uri : %s", *item);
+    g_object_set (httpextbin, "uri", *item, NULL);
     g_object_get (httpextbin, "uri", &uri, NULL);
-    fail_unless_equals_string (uri, *uris);
+    fail_unless_equals_string (uri, *item);
     g_free (uri);
   }
 
@@ -155,6 +156,7 @@ GST_START_TEST (test_missing_plugin)
   GstBus *bus;
   GstMessage *msg;
   GError *err = NULL;
+  GstStructure *s = NULL;
 
   httpextbin = gst_element_factory_make ("httpextbin", NULL);
   fail_unless (httpextbin != NULL, "Could not create httpextbin element");
@@ -239,6 +241,7 @@ GST_END_TEST;
 GST_START_TEST (test_repeat_state_change)
 {
   GstElement *httpextbin;
+  gchar **item;
 
   const gchar *uris[] =
       { "http+justin://", "http+jeongseok://", "http+hoonhee://",
@@ -254,9 +257,9 @@ GST_START_TEST (test_repeat_state_change)
   g_signal_connect (httpextbin, "pad-added",
       G_CALLBACK (httpextbin_pad_added_cb), NULL);
 
-  for (; *uris != NULL; uris++) {
-    GST_DEBUG ("Try to set uri : %s", *uris);
-    g_object_set (httpextbin, "uri", *uris, NULL);
+  for (item = uris; **item != NULL; *item++) {
+    GST_DEBUG ("Try to set uri : %s", *item);
+    g_object_set (httpextbin, "uri", *item, NULL);
 
     // change state to paused
     fail_unless_equals_int (gst_element_set_state (httpextbin,
