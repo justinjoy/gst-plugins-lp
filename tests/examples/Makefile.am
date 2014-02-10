@@ -1,0 +1,2 @@
+SUBDIRS = app
+DIST_SUBDIRS = app
