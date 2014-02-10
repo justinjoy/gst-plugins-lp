@@ -26,6 +26,80 @@
 #include <gst/check/gstcheck.h>
 #include <stdlib.h>
 
+static GType gst_http_filter_get_type (void);
+
+typedef struct _GstHttpFilter GstHttpFilter;
+typedef GstElementClass GstHttpFilterClass;
+
+struct _GstHttpFilter
+{
+  GstElement parent;
+
+  GstPad *sinkpad;
+  GstPad *srcpad;
+};
+
+static GstStaticPadTemplate filter_sink_templ = GST_STATIC_PAD_TEMPLATE ("sink",
+    GST_PAD_SINK, GST_PAD_ALWAYS,
+    GST_STATIC_CAPS ("justin")
+    );
+
+static GstStaticPadTemplate filter_src_templ = GST_STATIC_PAD_TEMPLATE ("src",
+    GST_PAD_SRC, GST_PAD_ALWAYS,
+    GST_STATIC_CAPS_ANY);
+
+G_DEFINE_TYPE (GstHttpFilter, gst_http_filter, GST_TYPE_ELEMENT);
+
+static void
+gst_http_filter_finalize (GObject * object)
+{
+  GstHttpFilter *demux = (GstHttpFilter *) object;
+
+  G_OBJECT_CLASS (gst_http_filter_parent_class)->finalize (object);
+}
+
+static void
+gst_http_filter_class_init (GstHttpFilterClass * klass)
+{
+  GObjectClass *gobject_class = (GObjectClass *) klass;
+  GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
+
+  gobject_class->finalize = gst_http_filter_finalize;
+
+  gst_element_class_add_pad_template (element_class,
+      gst_static_pad_template_get (&filter_sink_templ));
+  gst_element_class_add_pad_template (element_class,
+      gst_static_pad_template_get (&filter_src_templ));
+
+  gst_element_class_set_metadata (element_class,
+      "HttpFilter", "Generic", "Use in unit tests",
+      "Hoonhee Lee <hoonhee.lee@lge.com>");
+}
+
+static void
+gst_http_filter_init (GstHttpFilter * filter)
+{
+  filter->sinkpad =
+      gst_pad_new_from_static_template (&filter_sink_templ, "sink");
+  gst_element_add_pad (GST_ELEMENT (filter), filter->sinkpad);
+
+  filter->srcpad = gst_pad_new_from_static_template (&filter_src_templ, "src");
+  gst_element_add_pad (GST_ELEMENT (filter), filter->srcpad);
+}
+
+
+static void
+httpextbin_pad_added_cb (GstElement * bin, GstPad * pad, gboolean * p_flag)
+{
+  GstPad *target_pad;
+  fail_unless (GST_IS_GHOST_PAD (pad));
+
+  target_pad = gst_ghost_pad_get_target (GST_GHOST_PAD (pad));
+  fail_unless (target_pad != NULL);
+
+  gst_object_unref (target_pad);
+}
+
 GST_START_TEST (test_uri_interface)
 {
   GstElement *httpextbin;
@@ -128,6 +202,40 @@ GST_START_TEST (test_missing_plugin)
   gst_object_unref (httpextbin);
 }
 
+GST_END_TEST;
+
+GST_START_TEST (test_set_state_paused)
+{
+  GstElement *httpextbin;
+  GstElement *souphttpsrc;
+
+  fail_unless (gst_element_register (NULL, "httpfilter",
+          GST_RANK_PRIMARY + 100, gst_http_filter_get_type ()));
+
+  httpextbin = gst_element_factory_make ("httpextbin", NULL);
+  fail_unless (httpextbin != NULL, "Could not create httpextbin element");
+
+  g_signal_connect (httpextbin, "pad-added",
+      G_CALLBACK (httpextbin_pad_added_cb), NULL);
+
+  // set uri as "http+justin://"
+  g_object_set (httpextbin, "uri", "http+justin://", NULL);
+
+  // change state to paused
+  fail_unless_equals_int (gst_element_set_state (httpextbin, GST_STATE_PAUSED),
+      GST_STATE_CHANGE_SUCCESS);
+
+  g_object_get (httpextbin, "source", &souphttpsrc, NULL);
+  fail_unless (souphttpsrc != NULL, "Could not create souphttpsrc element");
+
+  gst_element_set_state (httpextbin, GST_STATE_NULL);
+
+  gst_object_unref (souphttpsrc);
+  gst_object_unref (httpextbin);
+}
+
+GST_END_TEST;
+
 static Suite *
 httpextbin_suite (void)
 {
@@ -138,6 +246,7 @@ httpextbin_suite (void)
   tcase_add_test (tc_chain, test_uri_interface);
   tcase_add_test (tc_chain, test_set_uri);
   tcase_add_test (tc_chain, test_missing_plugin);
+  tcase_add_test (tc_chain, test_set_state_paused);
 
   suite_add_tcase (s, tc_chain);
 
