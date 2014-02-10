@@ -214,6 +214,8 @@ gst/compat/Makefile
 gst/playback/Makefile
 tests/Makefile
 tests/check/Makefile
+tests/examples/Makefile
+tests/examples/app/Makefile
 m4/Makefile
 )
 AC_OUTPUT
