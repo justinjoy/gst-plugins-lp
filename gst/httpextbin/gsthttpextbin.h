@@ -35,6 +35,8 @@ typedef struct _GstHttpExtBinClass GstHttpExtBinClass;
 struct _GstHttpExtBin
 {
   GstBin parent;
+
+  gchar *uri;
 };
 
 struct _GstHttpExtBinClass
