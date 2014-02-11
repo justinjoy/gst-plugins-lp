@@ -241,7 +241,6 @@ GST_START_TEST (test_set_state_paused)
 
 GST_END_TEST;
 
-#if 0
 GST_START_TEST (test_repeat_state_change)
 {
   GstElement *httpextbin;
@@ -286,7 +285,6 @@ GST_START_TEST (test_repeat_state_change)
 }
 
 GST_END_TEST;
-#endif
 
 static Suite *
 httpextbin_suite (void)
@@ -299,7 +297,7 @@ httpextbin_suite (void)
   tcase_add_test (tc_chain, test_set_uri);
   //tcase_add_test (tc_chain, test_missing_plugin);
   tcase_add_test (tc_chain, test_set_state_paused);
-  //tcase_add_test (tc_chain, test_repeat_state_change);
+  tcase_add_test (tc_chain, test_repeat_state_change);
 
   suite_add_tcase (s, tc_chain);
 
