@@ -170,8 +170,10 @@ gst_http_ext_bin_finalize (GObject * self)
 
   if (bin->uri)
     g_free (bin->uri);
+
   if (bin->caps)
     gst_caps_unref (bin->caps);
+  bin->caps = NULL;
 
   if (bin->list)
     gst_plugin_feature_list_free (bin->list);
@@ -286,6 +288,37 @@ connect_filter_element (GstHttpExtBin * bin)
   return ret;
 }
 
+/* remove source and all related elements */
+static void
+remove_source (GstHttpExtBin * bin)
+{
+  if (bin->source_elem) {
+    GST_DEBUG_OBJECT (bin, "removing old src element");
+    gst_element_set_state (bin->source_elem, GST_STATE_NULL);
+
+    gst_bin_remove (GST_BIN_CAST (bin), bin->source_elem);
+    bin->source_elem = NULL;
+  }
+
+  if (bin->filter_elem) {
+    GST_DEBUG_OBJECT (bin, "removing old filter element");
+    gst_element_set_state (bin->filter_elem, GST_STATE_NULL);
+    gst_bin_remove (GST_BIN_CAST (bin), bin->filter_elem);
+    bin->filter_elem = NULL;
+  }
+
+  if (bin->caps)
+    gst_caps_unref (bin->caps);
+  bin->caps = NULL;
+
+  if (bin->list)
+    gst_plugin_feature_list_free (bin->list);
+  bin->list = NULL;
+
+  /* Don't loose the SOURCE flag */
+  GST_OBJECT_FLAG_SET (bin, GST_ELEMENT_FLAG_SOURCE);
+}
+
 static gboolean
 setup_source (GstHttpExtBin * bin)
 {
@@ -297,6 +330,11 @@ setup_source (GstHttpExtBin * bin)
   GList *tmp;
   GstElementFactory *factory = NULL;
   gboolean skip = FALSE;
+
+  GST_DEBUG_OBJECT (bin, "setup source");
+
+  /* delete old src */
+  remove_source (bin);
 
   protocol = gst_uri_get_protocol (bin->uri);
   location = gst_uri_get_location (bin->uri);
@@ -413,9 +451,14 @@ gst_http_ext_bin_change_state (GstElement * element, GstStateChange transition)
   ret = GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
 
   switch (transition) {
-    case GST_STATE_CHANGE_READY_TO_NULL:
-      GST_DEBUG ("ready to null");
-      //remove_source (decoder);
+    case GST_STATE_CHANGE_READY_TO_PAUSED:
+      GST_DEBUG ("ready to paused");
+      if (ret == GST_STATE_CHANGE_FAILURE)
+        goto setup_failed;
+      break;
+    case GST_STATE_CHANGE_PAUSED_TO_READY:
+      GST_DEBUG ("paused to ready");
+      remove_source (bin);
       break;
     default:
       break;
@@ -426,6 +469,12 @@ gst_http_ext_bin_change_state (GstElement * element, GstStateChange transition)
 source_failed:
   {
     GST_WARNING_OBJECT (bin, "Failed to configure source and filter elements");
+    return GST_STATE_CHANGE_FAILURE;
+  }
+setup_failed:
+  {
+    GST_DEBUG_OBJECT (bin,
+        "element failed to change states -- activation problem?");
     return GST_STATE_CHANGE_FAILURE;
   }
 }
