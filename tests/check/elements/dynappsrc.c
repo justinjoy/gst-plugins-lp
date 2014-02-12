@@ -32,7 +32,6 @@ GST_START_TEST (test_uri_interface)
 
   dynappsrc = gst_element_factory_make ("dynappsrc", "dynappsrc");
   fail_unless (dynappsrc != NULL, "Failed to create dynappsrc element");
-
   fail_unless (GST_IS_URI_HANDLER (dynappsrc),
       "Not implemented as URI handler");
 
@@ -49,6 +48,78 @@ GST_START_TEST (test_uri_interface)
 
 GST_END_TEST;
 
+static void
+pad_added_cb (GstElement * element, GstPad * pad, gint * n_added)
+{
+  *n_added = *n_added + 1;
+}
+
+GST_START_TEST (test_appsrc_creation)
+{
+  GstElement *dynappsrc;
+  guint pad_added_id = 0;
+  gint n_added = 0;
+  GstStateChangeReturn ret;
+  gchar *uri = "dynappsrc://";
+  GstElement *appsrc1 = NULL;
+  GstElement *appsrc2 = NULL;
+  GstIterator *iter;
+  GValue item = { 0, };
+  gboolean done = FALSE;
+  gboolean exist_srcpad = FALSE;
+  gint n_source = 0;
+
+  dynappsrc = gst_element_make_from_uri (GST_URI_SRC, uri, "source", NULL);
+
+  pad_added_id =
+      g_signal_connect (dynappsrc, "pad-added",
+      G_CALLBACK (pad_added_cb), &n_added);
+
+  g_signal_emit_by_name (dynappsrc, "new-appsrc", &appsrc1);
+  g_signal_emit_by_name (dynappsrc, "new-appsrc", &appsrc2);
+
+  gst_object_ref (appsrc1);
+  gst_object_ref (appsrc2);
+
+  fail_unless (appsrc1 && appsrc2, "fail to create appsrc element");
+
+  iter = gst_element_iterate_src_pads (dynappsrc);
+  while (!done) {
+    switch (gst_iterator_next (iter, &item)) {
+      case GST_ITERATOR_OK:
+        exist_srcpad = TRUE;
+        break;
+      case GST_ITERATOR_RESYNC:
+        gst_iterator_resync (iter);
+        break;
+      case GST_ITERATOR_ERROR:
+      case GST_ITERATOR_DONE:
+        break;
+    }
+  }
+
+  fail_unless (!exist_srcpad,
+      "srcpad is added too earlier, it should be added during state change");
+
+  g_value_unset (&item);
+  gst_iterator_free (iter);
+
+  g_object_get (dynappsrc, "n-source", &n_source, NULL);
+  fail_unless (n_source == 2, "the number of source element is not matched");
+
+  ret = gst_element_set_state (dynappsrc, GST_STATE_PAUSED);
+  fail_unless (ret == GST_STATE_CHANGE_SUCCESS,
+      "fail to state change to PAUSED");
+  fail_unless (n_added == 2, "srcpad of dynappsrc does not added");
+
+  g_signal_handler_disconnect (dynappsrc, pad_added_id);
+  gst_object_unref (appsrc1);
+  gst_object_unref (appsrc2);
+  gst_object_unref (dynappsrc);
+}
+
+GST_END_TEST;
+
 static Suite *
 dynappsrc_suite (void)
 {
@@ -58,6 +129,7 @@ dynappsrc_suite (void)
   suite_add_tcase (s, tc_chain);
 
   tcase_add_test (tc_chain, test_uri_interface);
+  tcase_add_test (tc_chain, test_appsrc_creation);
 
   return s;
 }
