@@ -151,7 +151,6 @@ GST_START_TEST (test_set_uri)
 
 GST_END_TEST;
 
-#if 0
 GST_START_TEST (test_missing_plugin)
 {
   GstElement *httpextbin;
@@ -163,43 +162,32 @@ GST_START_TEST (test_missing_plugin)
   httpextbin = gst_element_factory_make ("httpextbin", NULL);
   fail_unless (httpextbin != NULL, "Could not create httpextbin element");
 
+  bus = gst_bus_new ();
+  gst_element_set_bus (httpextbin, bus);
+
   // set uri as "http+unsupported://"
   g_object_set (httpextbin, "uri", "http+unsupported://", NULL);
 
-  fail_unless_equals_int (gst_element_set_state (httpextbin, GST_STATE_READY),
-      GST_STATE_CHANGE_SUCCESS);
   fail_unless_equals_int (gst_element_set_state (httpextbin, GST_STATE_PAUSED),
       GST_STATE_CHANGE_FAILURE);
 
-  /* there should be at least a missing-plugin message on the bus now and an
-   * error message; the missing-plugin message should be first */
-  bus = gst_element_get_bus (httpextbin);
-
-  msg = gst_bus_poll (bus, GST_MESSAGE_ELEMENT | GST_MESSAGE_ERROR, -1);
-  fail_unless_equals_int (GST_MESSAGE_TYPE (msg), GST_MESSAGE_ELEMENT);
-  s = (GstStructure *) gst_message_get_structure (msg);
-  fail_unless (s != NULL);
-  fail_unless (gst_structure_has_name (s, "missing-plugin"));
-  fail_unless (gst_structure_has_field_typed (s, "detail", G_TYPE_STRING));
-  fail_unless_equals_string (gst_structure_get_string (s, "detail"),
-      "http+unsupported");
-  fail_unless (gst_structure_has_field_typed (s, "type", G_TYPE_STRING));
-  fail_unless_equals_string (gst_structure_get_string (s, "type"), "urisource");
+  /* a state change and an error */
+  fail_if ((msg = gst_bus_pop (bus)) == NULL);
   gst_message_unref (msg);
-
-  msg = gst_bus_poll (bus, GST_MESSAGE_ERROR, -1);
+  fail_if ((msg = gst_bus_pop (bus)) == NULL);
   fail_unless_equals_int (GST_MESSAGE_TYPE (msg), GST_MESSAGE_ERROR);
 
   /* make sure the error is a CORE MISSING_PLUGIN one */
   gst_message_parse_error (msg, &err, NULL);
   fail_unless (err != NULL);
-  fail_unless (err->domain == GST_CORE_ERROR, "error has wrong error domain "
-      "%s instead of core-error-quark", g_quark_to_string (err->domain));
-  fail_unless (err->code == GST_CORE_ERROR_MISSING_PLUGIN, "error has wrong "
-      "code %u instead of GST_CORE_ERROR_MISSING_PLUGIN", err->code);
+  fail_unless (err->domain == GST_CORE_ERROR);
+  fail_unless (err->code == GST_CORE_ERROR_MISSING_PLUGIN);
   g_error_free (err);
   gst_message_unref (msg);
-  gst_object_unref (bus);
+
+  /* cleanup */
+  gst_element_set_bus (httpextbin, NULL);
+  gst_object_unref (GST_OBJECT (bus));
 
   gst_element_set_state (httpextbin, GST_STATE_NULL);
 
@@ -207,7 +195,6 @@ GST_START_TEST (test_missing_plugin)
 }
 
 GST_END_TEST;
-#endif
 
 GST_START_TEST (test_set_state_paused)
 {
@@ -295,7 +282,7 @@ httpextbin_suite (void)
   tc_chain = tcase_create ("general");
   tcase_add_test (tc_chain, test_uri_interface);
   tcase_add_test (tc_chain, test_set_uri);
-  //tcase_add_test (tc_chain, test_missing_plugin);
+  tcase_add_test (tc_chain, test_missing_plugin);
   tcase_add_test (tc_chain, test_set_state_paused);
   tcase_add_test (tc_chain, test_repeat_state_change);
 
