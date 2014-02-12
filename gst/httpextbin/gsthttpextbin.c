@@ -330,6 +330,7 @@ setup_source (GstHttpExtBin * bin)
   GList *tmp;
   GstElementFactory *factory = NULL;
   gboolean skip = FALSE;
+  gchar *caps_str;
 
   GST_DEBUG_OBJECT (bin, "setup source");
 
@@ -384,8 +385,11 @@ setup_source (GstHttpExtBin * bin)
   }
 
   if (!factory) {
-    GST_WARNING_OBJECT (bin,
-        "Couldn't get a proper element factory for filter element. Thus, souphttpsrc element will be connected directly to bin");
+    caps_str = gst_caps_to_string (bin->caps);
+    GST_ELEMENT_ERROR (bin, CORE, MISSING_PLUGIN, (NULL),
+        ("No filter element which can handle given caps:%s, check your installation",
+            caps_str));
+    g_free (caps_str);
     return FALSE;
   }
 
