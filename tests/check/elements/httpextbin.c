@@ -54,8 +54,6 @@ G_DEFINE_TYPE (GstHttpFilter, gst_http_filter, GST_TYPE_ELEMENT);
 static void
 gst_http_filter_finalize (GObject * object)
 {
-  GstHttpFilter *demux = (GstHttpFilter *) object;
-
   G_OBJECT_CLASS (gst_http_filter_parent_class)->finalize (object);
 }
 
@@ -157,7 +155,6 @@ GST_START_TEST (test_missing_plugin)
   GstBus *bus;
   GstMessage *msg;
   GError *err = NULL;
-  GstStructure *s = NULL;
 
   httpextbin = gst_element_factory_make ("httpextbin", NULL);
   fail_unless (httpextbin != NULL, "Could not create httpextbin element");
