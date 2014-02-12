@@ -343,15 +343,15 @@ setup_source (GstHttpExtBin * bin)
   GST_INFO_OBJECT (bin, "protocol:%s, location:%s", protocol, location);
 
   protocols = g_strsplit_set (protocol, "+", -1);
+  g_free (protocol);
   g_assert (protocols != NULL);
   g_assert (g_strv_length (protocols) == 2);
 
-  real_protocol = protocols[0];
-  bin->caps =
-      gst_caps_from_string (g_strdup_printf ("application/%s", protocols[1]));
+  real_protocol = g_strdup (protocols[0]);
+  caps_str = g_strdup_printf ("application/%s", protocols[1]);
+  bin->caps = gst_caps_from_string (caps_str);
 
-  GST_INFO_OBJECT (bin, "real_protocol:%s, caps:%s", real_protocol,
-      gst_caps_to_string (bin->caps));
+  GST_INFO_OBJECT (bin->caps, "created caps");
 
   /* list up elements with given caps */
   bin->list = gst_http_ext_bin_update_factories_list (bin);
@@ -385,13 +385,12 @@ setup_source (GstHttpExtBin * bin)
   }
 
   if (!factory) {
-    caps_str = gst_caps_to_string (bin->caps);
-    GST_ELEMENT_ERROR (bin, CORE, MISSING_PLUGIN, (NULL),
-        ("No filter element which can handle given caps:%s, check your installation",
-            caps_str));
-    g_free (caps_str);
-    return FALSE;
+    ret = FALSE;
+    goto no_filter;
   }
+
+  g_free (caps_str);
+  g_strfreev (protocols);
 
   /* generate souphttpsrc element */
   if (!(bin->source_elem = gst_element_factory_make ("souphttpsrc", NULL))) {
@@ -401,6 +400,8 @@ setup_source (GstHttpExtBin * bin)
 
   new_uri = g_strdup_printf ("%s://%s", real_protocol, location);
   GST_INFO_OBJECT (bin, "new_uri:%s", new_uri);
+  g_free (location);
+  g_free (real_protocol);
 
   /* set converted uri to souphttpsrc element */
   ret = set_uri_to_source (bin, new_uri);
@@ -409,9 +410,7 @@ setup_source (GstHttpExtBin * bin)
         new_uri);
     return FALSE;
   }
-  g_free (protocol);
-  g_free (location);
-  g_free (real_protocol);
+
   g_free (new_uri);
 
   if (!(gst_bin_add (GST_BIN_CAST (bin), bin->source_elem))) {
@@ -433,6 +432,24 @@ setup_source (GstHttpExtBin * bin)
 done:
   GST_INFO_OBJECT (bin, "ret:%d", ret);
   return ret;
+
+no_filter:
+  {
+    GST_ELEMENT_ERROR (bin, CORE, MISSING_PLUGIN, (NULL),
+        ("No filter element which can handle given caps:%s, check your installation",
+            caps_str));
+
+    g_free (caps_str);
+    g_free (location);
+    g_free (real_protocol);
+    g_strfreev (protocols);
+
+    if (bin->caps)
+      gst_caps_unref (bin->caps);
+    bin->caps = NULL;
+
+    goto done;
+  }
 }
 
 static GstStateChangeReturn
