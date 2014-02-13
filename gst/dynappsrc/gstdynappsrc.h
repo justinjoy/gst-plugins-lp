@@ -33,18 +33,35 @@ G_BEGIN_DECLS
 
 typedef struct _GstDynAppSrc      GstDynAppSrc;
 typedef struct _GstDynAppSrcClass GstDynAppSrcClass;
+typedef struct _GstAppSourceGroup    GstAppSourceGroup;
 
+/**
+ * GstDynAppSrc:
+ *
+ * dynappsrc element data structure
+ */
 struct _GstDynAppSrc
 {
   GstBin parent;
 
   GstPad* srcpad;
   gchar* uri;
+
+  GList *appsrc_list;
 };
 
 struct _GstDynAppSrcClass
 {
   GstBinClass parent_class;
+
+  /* create a appsrc element */
+  GstElement *(*new_appsrc) (GstDynAppSrc * dynappsrc, const gchar * name);
+};
+
+struct _GstAppSourceGroup
+{
+  GstElement *appsrc;
+  GstPad *srcpad;
 };
 
 GType gst_dyn_appsrc_get_type (void);

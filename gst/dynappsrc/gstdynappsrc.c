@@ -42,19 +42,28 @@ enum
   PROP_LAST
 };
 
+enum
+{
+  SIGNAL_NEW_APPSRC,
+  LAST_SIGNAL
+};
+
 static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE ("src_%u",
     GST_PAD_SRC,
     GST_PAD_SOMETIMES,
     GST_STATIC_CAPS_ANY);
+
+static guint gst_dyn_appsrc_signals[LAST_SIGNAL] = { 0 };
 
 static void gst_dyn_appsrc_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec);
 static void gst_dyn_appsrc_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
 static void gst_dyn_appsrc_finalize (GObject * self);
+static GstElement *gst_dyn_appsrc_new_appsrc (GstDynAppSrc * bin,
+    const gchar * name);
 static void gst_dyn_appsrc_uri_handler_init (gpointer g_iface,
     gpointer iface_data);
-
 
 G_DEFINE_TYPE_WITH_CODE (GstDynAppSrc, gst_dyn_appsrc, GST_TYPE_BIN,
     G_IMPLEMENT_INTERFACE (GST_TYPE_URI_HANDLER,
@@ -82,6 +91,25 @@ gst_dyn_appsrc_class_init (GstDynAppSrcClass * klass)
           "URI to get protected content",
           NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  /**
+   * GstDynAppSrc::new-appsrc
+   * @dynappsrc: a #GstDynAppSrc
+   * @name : name of appsrc element
+   *
+   * Action signal to create a appsrc element.
+   * This signal should be emitted before changing state READY to PAUSED.
+   * The application emit this signal as soon as receiving source-setup signal from pipeline.
+   *
+   * Returns: a GstElement of appsrc element or NULL when element creation failed.
+   */
+  gst_dyn_appsrc_signals[SIGNAL_NEW_APPSRC] =
+      g_signal_new ("new-appsrc", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
+      G_STRUCT_OFFSET (GstDynAppSrcClass, new_appsrc), NULL, NULL,
+      g_cclosure_marshal_generic, GST_TYPE_ELEMENT, 1, G_TYPE_STRING);
+
+  klass->new_appsrc = gst_dyn_appsrc_new_appsrc;
+
   gst_element_class_set_static_metadata (gstelement_class,
       "Dynappsrc", "Source/Bin",
       "Dynamic App Source", "Wonchul Lee <wonchul86.lee@lge.com>");
@@ -95,6 +123,7 @@ gst_dyn_appsrc_init (GstDynAppSrc * bin)
 {
   /* init member variable */
   bin->uri = g_strdup (DEFAULT_PROP_URI);
+  bin->appsrc_list = NULL;
 
   GST_OBJECT_FLAG_SET (bin, GST_ELEMENT_FLAG_SOURCE);
 }
@@ -144,8 +173,34 @@ gst_dyn_appsrc_finalize (GObject * self)
   GstDynAppSrc *bin = GST_DYN_APPSRC (self);
 
   g_free (bin->uri);
+  g_list_free_full (bin->appsrc_list, g_free);
 
   G_OBJECT_CLASS (parent_class)->finalize (self);
+}
+
+static GstElement *
+gst_dyn_appsrc_new_appsrc (GstDynAppSrc * bin, const gchar * name)
+{
+  GstAppSourceGroup *appsrc_group;
+
+  GST_OBJECT_LOCK (bin);
+
+  if (GST_STATE (bin) >= GST_STATE_PAUSED) {
+    GST_WARNING_OBJECT (bin,
+        "deny to create appsrc when state is in PAUSED or PLAYING state");
+    GST_OBJECT_UNLOCK (bin);
+    return NULL;
+  }
+
+  appsrc_group = g_malloc0 (sizeof (GstAppSourceGroup));
+  appsrc_group->appsrc = gst_element_factory_make ("appsrc", name);
+  bin->appsrc_list = g_list_append (bin->appsrc_list, appsrc_group);
+
+  GST_INFO_OBJECT (bin, "appsrc %p is appended to a list", appsrc_group);
+
+  GST_OBJECT_UNLOCK (bin);
+
+  return appsrc_group->appsrc;
 }
 
 static GstURIType
@@ -174,9 +229,7 @@ static gboolean
 gst_dyn_appsrc_uri_set_uri (GstURIHandler * handler, const gchar * uri,
     GError ** error)
 {
-  gboolean ret = FALSE;
-
-  return ret;
+  return TRUE;
 }
 
 static void
