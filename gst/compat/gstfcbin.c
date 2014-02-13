@@ -20,7 +20,6 @@
  * Boston, MA 02111-1307, USA.
  */
 
-
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -370,6 +369,8 @@ gst_fc_bin_init (GstFCBin * fcbin)
 static void
 gst_fc_bin_reset (GstFCBin * fcbin)
 {
+  unblock_pads (fcbin);
+
   if (fcbin->caps_pairs != NULL) {
     g_hash_table_unref (fcbin->caps_pairs);
     fcbin->caps_pairs = NULL;
@@ -999,8 +1000,18 @@ gst_fc_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
   gulong block_id;
   gchar *padname = NULL;
   gint type = -1;
+  GstState current_state;
 
   fcbin = GST_FC_BIN (element);
+
+  current_state = GST_STATE (fcbin);
+
+
+  /* check bin's state */
+  if (current_state == GST_STATE_NULL || current_state == GST_STATE_READY) {
+    ghost_sinkpad = NULL;
+    goto invalid_state;
+  }
 
   s = gst_caps_get_structure (caps, 0);
   in_name = gst_structure_get_name (s);
@@ -1032,7 +1043,15 @@ gst_fc_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
       NULL, NULL, NULL);
   g_object_set_data (G_OBJECT (ghost_sinkpad), "block_id", (gpointer) block_id);
 
+done:
   return ghost_sinkpad;
+
+invalid_state:
+  {
+    GST_WARNING_OBJECT (fcbin, "state of fcbin is %s",
+        gst_element_state_get_name (current_state));
+    goto done;
+  }
 }
 
 //TODO need to implement resource deallocation code.
@@ -1135,6 +1154,43 @@ gst_fc_bin_unblock_sinkpads (GstFCBin * fcbin)
   gst_iterator_free (it);
 
   return TRUE;
+}
+
+void
+unblock_pads (GstFCBin * fcbin)
+{
+  GstPad *ghostpad = NULL;
+  gulong block_id = 0;
+
+  GST_INFO_OBJECT (fcbin, "unblocking all of pads of fcbin");
+
+  GST_FC_BIN_LOCK (fcbin);
+  while (fcbin->sinkpads != NULL && fcbin->sinkpads->len > 0) {
+    GST_INFO_OBJECT (fcbin, "number of blocked sink pad = %d",
+        fcbin->sinkpads->len);
+    ghostpad = g_ptr_array_index (fcbin->sinkpads, 0);
+    block_id = (guintptr) g_object_get_data (G_OBJECT (ghostpad), "block_id");
+    if (block_id) {
+      gst_pad_remove_probe (ghostpad, block_id);
+      g_object_set_data (G_OBJECT (ghostpad), "block_id", 0);
+    }
+    g_ptr_array_remove (fcbin->sinkpads, ghostpad);
+
+  }
+
+  if (fcbin->video_srcpad && fcbin->video_block_id) {
+    gst_pad_remove_probe (fcbin->video_srcpad, fcbin->video_block_id);
+    fcbin->video_block_id = 0;
+  }
+  if (fcbin->audio_srcpad && fcbin->audio_block_id) {
+    gst_pad_remove_probe (fcbin->audio_srcpad, fcbin->audio_block_id);
+    fcbin->audio_block_id = 0;
+  }
+  if (fcbin->text_srcpad && fcbin->text_block_id) {
+    gst_pad_remove_probe (fcbin->text_srcpad, fcbin->text_block_id);
+    fcbin->text_block_id = 0;
+  }
+  GST_FC_BIN_UNLOCK (fcbin);
 }
 
 static gboolean
