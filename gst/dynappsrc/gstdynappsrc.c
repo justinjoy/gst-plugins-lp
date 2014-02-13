@@ -103,6 +103,8 @@ static void gst_dyn_appsrc_set_property (GObject * object, guint prop_id,
 static void gst_dyn_appsrc_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
 static void gst_dyn_appsrc_finalize (GObject * self);
+static GstStateChangeReturn gst_dyn_appsrc_change_state (GstElement * element,
+    GstStateChange transition);
 static GstElement *gst_dyn_appsrc_new_appsrc (GstDynAppSrc * bin,
     const gchar * name);
 static void gst_dyn_appsrc_uri_handler_init (gpointer g_iface,
@@ -152,6 +154,9 @@ gst_dyn_appsrc_class_init (GstDynAppSrcClass * klass)
       g_cclosure_marshal_generic, GST_TYPE_ELEMENT, 1, G_TYPE_STRING);
 
   klass->new_appsrc = gst_dyn_appsrc_new_appsrc;
+
+  gstelement_class->change_state =
+      GST_DEBUG_FUNCPTR (gst_dyn_appsrc_change_state);
 
   gst_element_class_set_static_metadata (gstelement_class,
       "Dynappsrc", "Source/Bin",
@@ -216,9 +221,63 @@ gst_dyn_appsrc_finalize (GObject * self)
   GstDynAppSrc *bin = GST_DYN_APPSRC (self);
 
   g_free (bin->uri);
-  g_list_free_full (bin->appsrc_list, g_free);
 
   G_OBJECT_CLASS (parent_class)->finalize (self);
+}
+
+static gboolean
+setup_source (GstDynAppSrc * bin)
+{
+  GList *item;
+  GstPadTemplate *pad_tmpl;
+  gchar *padname;
+  gboolean ret = FALSE;
+
+  pad_tmpl = gst_static_pad_template_get (&src_template);
+
+  for (item = bin->appsrc_list; item; item = g_list_next (item)) {
+    GstAppSourceGroup *appsrc_group = (GstAppSourceGroup *) item->data;
+    GstPad *srcpad = NULL;
+
+    gst_bin_add (GST_BIN_CAST (bin), appsrc_group->appsrc);
+
+    srcpad = gst_element_get_static_pad (appsrc_group->appsrc, "src");
+    padname =
+        g_strdup_printf ("src_%u", g_list_position (bin->appsrc_list, item));
+    appsrc_group->srcpad =
+        gst_ghost_pad_new_from_template (padname, srcpad, pad_tmpl);
+    gst_pad_set_active (appsrc_group->srcpad, TRUE);
+    gst_element_add_pad (GST_ELEMENT_CAST (bin), appsrc_group->srcpad);
+
+    g_free (padname);
+
+    ret = TRUE;
+  }
+
+  return ret;
+}
+
+static void
+remove_source (GstDynAppSrc * bin)
+{
+  GList *item;
+
+  for (item = bin->appsrc_list; item; item = g_list_next (item)) {
+    GstAppSourceGroup *appsrc_group = (GstAppSourceGroup *) item->data;
+
+    GST_DEBUG_OBJECT (bin, "removing appsrc element and ghostpad");
+
+    gst_ghost_pad_set_target (GST_GHOST_PAD_CAST (appsrc_group->srcpad), NULL);
+    gst_element_remove_pad (GST_ELEMENT_CAST (bin), appsrc_group->srcpad);
+    appsrc_group->srcpad = NULL;
+
+    gst_element_set_state (appsrc_group->appsrc, GST_STATE_NULL);
+    gst_bin_remove (GST_BIN_CAST (bin), appsrc_group->appsrc);
+    appsrc_group->appsrc = NULL;
+  }
+
+  g_list_free_full (bin->appsrc_list, g_free);
+  bin->appsrc_list = NULL;
 }
 
 static GstElement *
@@ -239,11 +298,55 @@ gst_dyn_appsrc_new_appsrc (GstDynAppSrc * bin, const gchar * name)
   appsrc_group->appsrc = gst_element_factory_make ("appsrc", name);
   bin->appsrc_list = g_list_append (bin->appsrc_list, appsrc_group);
 
-  GST_INFO_OBJECT (bin, "appsrc %p is appended to a list", appsrc_group);
+  GST_INFO_OBJECT (bin, "appsrc %p is appended to a list",
+      appsrc_group->appsrc);
 
   GST_OBJECT_UNLOCK (bin);
 
   return appsrc_group->appsrc;
+}
+
+static GstStateChangeReturn
+gst_dyn_appsrc_change_state (GstElement * element, GstStateChange transition)
+{
+  GstStateChangeReturn ret;
+  GstDynAppSrc *bin = GST_DYN_APPSRC (element);
+
+  switch (transition) {
+    case GST_STATE_CHANGE_READY_TO_PAUSED:
+      if (!setup_source (bin))
+        return GST_STATE_CHANGE_FAILURE;
+      break;
+    default:
+      break;
+  }
+
+  ret = GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
+
+  switch (transition) {
+    case GST_STATE_CHANGE_READY_TO_PAUSED:
+      GST_DEBUG_OBJECT (bin, "ready to paused");
+      if (ret == GST_STATE_CHANGE_FAILURE)
+        goto setup_failed;
+      break;
+    case GST_STATE_CHANGE_PAUSED_TO_READY:
+      GST_DEBUG_OBJECT (bin, "paused to ready");
+      remove_source (bin);
+      break;
+    case GST_STATE_CHANGE_READY_TO_NULL:
+      remove_source (bin);
+      break;
+    default:
+      break;
+  }
+
+  return ret;
+
+setup_failed:
+  {
+    /* clean up leftover groups */
+    return GST_STATE_CHANGE_FAILURE;
+  }
 }
 
 static GstURIType
