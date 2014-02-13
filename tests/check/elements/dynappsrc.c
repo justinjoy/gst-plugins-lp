@@ -78,6 +78,7 @@ GST_START_TEST (test_appsrc_creation)
   g_signal_emit_by_name (dynappsrc, "new-appsrc", &appsrc1);
   g_signal_emit_by_name (dynappsrc, "new-appsrc", &appsrc2);
 
+  /* user should do ref appsrc elements before using it */
   gst_object_ref (appsrc1);
   gst_object_ref (appsrc2);
 
@@ -88,12 +89,14 @@ GST_START_TEST (test_appsrc_creation)
     switch (gst_iterator_next (iter, &item)) {
       case GST_ITERATOR_OK:
         exist_srcpad = TRUE;
+        done = TRUE;
         break;
       case GST_ITERATOR_RESYNC:
         gst_iterator_resync (iter);
         break;
       case GST_ITERATOR_ERROR:
       case GST_ITERATOR_DONE:
+        done = TRUE;
         break;
     }
   }
@@ -112,9 +115,12 @@ GST_START_TEST (test_appsrc_creation)
       "fail to state change to PAUSED");
   fail_unless (n_added == 2, "srcpad of dynappsrc does not added");
 
-  g_signal_handler_disconnect (dynappsrc, pad_added_id);
+  /* user should do unref appsrc elements before destroy pipeline */
   gst_object_unref (appsrc1);
   gst_object_unref (appsrc2);
+
+  gst_element_set_state (dynappsrc, GST_STATE_NULL);
+  g_signal_handler_disconnect (dynappsrc, pad_added_id);
   gst_object_unref (dynappsrc);
 }
 
