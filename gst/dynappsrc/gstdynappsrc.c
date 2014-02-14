@@ -18,6 +18,49 @@
  * Boston, MA 02111-1307, USA.
  */
 
+
+/**
+ * SECTION:element-dynappsrc
+ *
+ * Dynappsrc provides multiple appsrc elements inside a single source element(bin)
+ * for separated audio, video and text stream.
+ *
+ * <refsect2>
+ * <title>Usage</title>
+ * <para>
+ * A dynappsrc element can be created by pipeline using URI included dynappsrc://
+ * protocal.
+ * The URI to play should be set via the #GstLpBin:uri property.
+ *
+ * Dynappsrc is a #GstBin. It will notified to application when it is created by
+ * source-setup signal of pipeline.
+ * A appsrc element can be created by new-appsrc signal action to dynappsrc. It
+ * should be created before changing state READY to PAUSED. Therefore application
+ * need to create appsrc element as soon as receiving source-setup signal.
+ * Then appsrc can be configured by setting the element to PAUSED state.
+ *
+ * When playback has finished (an EOS message has been received on the bus)
+ * or an error has occured (an ERROR message has been received on the bus) or
+ * the user wants to play a different track, dynappsrc should be set back to
+ * READY or NULL state, then appsrc elements in dynappsrc should be set to the
+ * NULL state and removed from it.
+ *
+ * </para>
+ * </refsect2>
+ * <refsect2>
+ * <title>Rule for reference appsrc</title>
+ * <para>
+ * Here is a rule for application when using the appsrc element.
+ * When application created appsrc element, ref-count of appsrc is one by
+ * default. If it was not intended to decrease ref-count during using by
+ * application, pipeline may broke.
+ * Therefore it should increase ref-count explicitly by using gst_object_ref.
+ * It should be decreased ref-count either by using gst_object_unref when playback
+ * has finished.
+ * </para>
+ * </refsect2>
+ */
+
 #ifdef HAVE_CONFIG_H
 #include <config.h>
 #endif
