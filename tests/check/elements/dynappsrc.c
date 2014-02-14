@@ -60,7 +60,6 @@ GST_START_TEST (test_appsrc_creation)
   guint pad_added_id = 0;
   gint n_added = 0;
   GstStateChangeReturn ret;
-  gchar *uri = "dynappsrc://";
   GstElement *appsrc1 = NULL;
   GstElement *appsrc2 = NULL;
   GstIterator *iter;
@@ -69,20 +68,25 @@ GST_START_TEST (test_appsrc_creation)
   gboolean exist_srcpad = FALSE;
   gint n_source = 0;
 
-  dynappsrc = gst_element_make_from_uri (GST_URI_SRC, uri, "source", NULL);
+  dynappsrc =
+      gst_element_make_from_uri (GST_URI_SRC, "dynappsrc://", "source", NULL);
+
+  fail_unless (dynappsrc != NULL, "fail to create dynappsrc element by uri");
 
   pad_added_id =
       g_signal_connect (dynappsrc, "pad-added",
       G_CALLBACK (pad_added_cb), &n_added);
 
-  g_signal_emit_by_name (dynappsrc, "new-appsrc", &appsrc1);
-  g_signal_emit_by_name (dynappsrc, "new-appsrc", &appsrc2);
+  g_signal_emit_by_name (dynappsrc, "new-appsrc", NULL, &appsrc1);
+  g_signal_emit_by_name (dynappsrc, "new-appsrc", "thisisappsrc", &appsrc2);
 
   /* user should do ref appsrc elements before using it */
   gst_object_ref (appsrc1);
   gst_object_ref (appsrc2);
 
   fail_unless (appsrc1 && appsrc2, "fail to create appsrc element");
+  fail_unless (GST_OBJECT_NAME (appsrc2)
+      && "thisisappsrc", "fail to set user-defined name");
 
   iter = gst_element_iterate_src_pads (dynappsrc);
   while (!done) {
