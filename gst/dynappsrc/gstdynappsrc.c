@@ -32,7 +32,7 @@
  * protocal.
  * The URI to play should be set via the #GstLpBin:uri property.
  *
- * Dynappsrc is a #GstBin. It will notified to application when it is created by
+ * Dynappsrc is #GstBin. It will notified to application when it is created by
  * source-setup signal of pipeline.
  * A appsrc element can be created by new-appsrc signal action to dynappsrc. It
  * should be created before changing state READY to PAUSED. Therefore application
@@ -44,7 +44,6 @@
  * the user wants to play a different track, dynappsrc should be set back to
  * READY or NULL state, then appsrc elements in dynappsrc should be set to the
  * NULL state and removed from it.
- *
  * </para>
  * </refsect2>
  * <refsect2>
@@ -58,6 +57,30 @@
  * It should be decreased ref-count either by using gst_object_unref when playback
  * has finished.
  * </para>
+ * </refsect2>
+ * <refsect2>
+ * <title>Examples</title>
+ * |[
+ * app->lpbin = gst_element_factory_make ("lpbin", NULL);
+ * g_object_set (app->lpbin, "uri", "dynappsrc://", NULL);
+ * g_signal_connect (app->lpbin, "deep-notify::source",
+ *     (GCallback) found_source, app);
+ * ]|
+ * This will create dynappsrc element in pipeline and watch source notify.
+ * |[
+ * gst_object_ref (appsrc1);
+ * gst_object_ref (appsrc2);
+ *
+ * g_signal_emit_by_name (dynappsrc, "new-appsrc", &appsrc1);
+ * g_signal_emit_by_name (dynappsrc, "new-appsrc", &appsrc2);
+ *
+ * g_signal_connect (app->appsrc1, "need-data", G_CALLBACK (start_feed), app);
+ * g_signal_connect (app->appsrc1, "enough-data", G_CALLBACK (stop_feed), app);
+ *
+ * g_signal_connect (app->appsrc2, "need-data", G_CALLBACK (start_feed), app);
+ * g_signal_connect (app->appsrc2, "enough-data", G_CALLBACK (stop_feed), app);
+ * ]|
+ * This will create appsrc elements when called source notify handler.
  * </refsect2>
  */
 
