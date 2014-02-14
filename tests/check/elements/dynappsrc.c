@@ -119,6 +119,15 @@ GST_START_TEST (test_appsrc_creation)
   gst_object_unref (appsrc1);
   gst_object_unref (appsrc2);
 
+  /*
+     In general, we don't need to call set_state(NULL) before unref element
+     because if ref_count is zero by gst_object_unref, the state of the element
+     automatically becomes NULL.
+     However, in here, set_state(NULL) is called in order to clarify
+     how to handle appsrc from dynappsrc. Without internal appsrcs de-referencing,
+     the appsrcs are remained as detached elements from dynappsrc.
+     This means that the upper layer cannot re-use appsrcs after calling set_state(NULL).
+   */
   gst_element_set_state (dynappsrc, GST_STATE_NULL);
   g_signal_handler_disconnect (dynappsrc, pad_added_id);
   gst_object_unref (dynappsrc);
