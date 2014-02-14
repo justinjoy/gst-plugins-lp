@@ -25,6 +25,8 @@
 #include <gst/gst.h>
 #include <gst/check/gstcheck.h>
 
+#define NUM_REPEAT 5
+
 GST_START_TEST (test_uri_interface)
 {
   GstElement *dynappsrc;
@@ -194,6 +196,67 @@ GST_START_TEST (test_appsrc_create_when_paused)
 
 GST_END_TEST;
 
+GST_START_TEST (test_repeat_state_change)
+{
+  GstElement *dynappsrc;
+  guint pad_added_id = 0;
+  gint n_added = 0;
+  GstStateChangeReturn ret;
+  GstElement *appsrc[NUM_REPEAT];
+  gint n_source = 0;
+  gint count = 0;
+  gint nb_appsrc = 0;
+
+  dynappsrc =
+      gst_element_make_from_uri (GST_URI_SRC, "dynappsrc://", "source", NULL);
+
+  pad_added_id =
+      g_signal_connect (dynappsrc, "pad-added",
+      G_CALLBACK (pad_added_cb), &n_added);
+
+  for (count = 1; count <= NUM_REPEAT; count++) {
+    for (nb_appsrc = 0; nb_appsrc < count; nb_appsrc++) {
+      g_signal_emit_by_name (dynappsrc, "new-appsrc", NULL, &appsrc[nb_appsrc]);
+      gst_object_ref (appsrc[nb_appsrc]);
+      fail_unless (appsrc[nb_appsrc], "failed to create appsrc element");
+    }
+    g_object_get (dynappsrc, "n-source", &n_source, NULL);
+    fail_unless (n_source == count,
+        "the number of source element is not matched");
+
+    // change state to paused
+    ret = gst_element_set_state (dynappsrc, GST_STATE_PAUSED);
+    fail_unless (ret == GST_STATE_CHANGE_SUCCESS,
+        "fail to state change to PAUSED");
+
+    ret = gst_element_get_state (dynappsrc, NULL, NULL, -1);
+    fail_unless (ret == GST_STATE_CHANGE_SUCCESS,
+        "fail to get state after PAUSED");
+
+    fail_unless (n_added == count, "srcpad of dynappsrc does not added");
+
+    // change state to ready
+    ret = gst_element_set_state (dynappsrc, GST_STATE_READY);
+    fail_unless (ret == GST_STATE_CHANGE_SUCCESS,
+        "fail to state change to READY");
+
+    ret = gst_element_get_state (dynappsrc, NULL, NULL, -1);
+    fail_unless (ret == GST_STATE_CHANGE_SUCCESS,
+        "fail to get state after READY");
+
+    n_added = 0;
+    for (nb_appsrc = 0; nb_appsrc < count; nb_appsrc++) {
+      gst_object_unref (appsrc[nb_appsrc]);
+    }
+  }
+
+  gst_element_set_state (dynappsrc, GST_STATE_NULL);
+  g_signal_handler_disconnect (dynappsrc, pad_added_id);
+  gst_object_unref (dynappsrc);
+}
+
+GST_END_TEST;
+
 static Suite *
 dynappsrc_suite (void)
 {
@@ -205,6 +268,7 @@ dynappsrc_suite (void)
   tcase_add_test (tc_chain, test_uri_interface);
   tcase_add_test (tc_chain, test_appsrc_creation);
   tcase_add_test (tc_chain, test_appsrc_create_when_paused);
+  tcase_add_test (tc_chain, test_repeat_state_change);
 
   return s;
 }
