@@ -139,6 +139,61 @@ GST_START_TEST (test_appsrc_creation)
 
 GST_END_TEST;
 
+GST_START_TEST (test_appsrc_create_when_paused)
+{
+  GstElement *dynappsrc;
+  guint pad_added_id = 0;
+  gint n_added = 0;
+  GstStateChangeReturn ret;
+  GstElement *appsrc1 = NULL;
+  GstElement *appsrc2 = NULL;
+  gint n_source = 0;
+
+  dynappsrc =
+      gst_element_make_from_uri (GST_URI_SRC, "dynappsrc://", "source", NULL);
+
+  pad_added_id =
+      g_signal_connect (dynappsrc, "pad-added",
+      G_CALLBACK (pad_added_cb), &n_added);
+
+  g_signal_emit_by_name (dynappsrc, "new-appsrc", "justin", &appsrc1);
+
+  /* user should do ref appsrc elements before using it */
+  gst_object_ref (appsrc1);
+
+  fail_unless (appsrc1, "failed to create appsrc element");
+
+  g_object_get (dynappsrc, "n-source", &n_source, NULL);
+  fail_unless (n_source == 1, "the number of source element is not matched");
+
+  ret = gst_element_set_state (dynappsrc, GST_STATE_PAUSED);
+  fail_unless (ret == GST_STATE_CHANGE_SUCCESS,
+      "fail to state change to PAUSED");
+
+  /* Try to generate a appsrc element when state is paused.
+   * If it is genetated, it is not make sence.
+   * Because, in this time, configuratoin of all appsrc elements in dynappsrc bin is already done.
+   * Thus, you should call "new-appsrc" singal action before paused state.
+   */
+  g_signal_emit_by_name (dynappsrc, "new-appsrc", "wonchul", &appsrc2);
+  fail_unless (!appsrc2,
+      "appsrc element is generated even though when state is paused");
+
+  g_object_get (dynappsrc, "n-source", &n_source, NULL);
+  fail_unless (n_source == 1, "the number of source element is not matched");
+
+  fail_unless (n_added == 1, "srcpad of dynappsrc does not added");
+
+  /* user should do unref appsrc elements before destroy pipeline */
+  gst_object_unref (appsrc1);
+
+  gst_element_set_state (dynappsrc, GST_STATE_NULL);
+  g_signal_handler_disconnect (dynappsrc, pad_added_id);
+  gst_object_unref (dynappsrc);
+}
+
+GST_END_TEST;
+
 static Suite *
 dynappsrc_suite (void)
 {
@@ -149,6 +204,7 @@ dynappsrc_suite (void)
 
   tcase_add_test (tc_chain, test_uri_interface);
   tcase_add_test (tc_chain, test_appsrc_creation);
+  tcase_add_test (tc_chain, test_appsrc_create_when_paused);
 
   return s;
 }
