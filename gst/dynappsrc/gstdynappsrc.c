@@ -253,6 +253,7 @@ setup_source (GstDynAppSrc * bin)
 
     ret = TRUE;
   }
+  gst_object_unref (pad_tmpl);
 
   return ret;
 }
