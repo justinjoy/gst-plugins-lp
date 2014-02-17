@@ -82,6 +82,7 @@ enum
 {
   PROP_0,
   PROP_URI,
+  PROP_N_SRC,
   PROP_LAST
 };
 
@@ -137,6 +138,16 @@ gst_dyn_appsrc_class_init (GstDynAppSrcClass * klass)
           NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   /**
+   * GstDynAppSrc:n-src
+   *
+   * Get the total number of available streams.
+   */
+  g_object_class_install_property (gobject_class, PROP_N_SRC,
+      g_param_spec_int ("n-source", "Number Source",
+          "Total number of source streams", 0, G_MAXINT, 0,
+          G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+
+  /**
    * GstDynAppSrc::new-appsrc
    * @dynappsrc: a #GstDynAppSrc
    * @name : name of appsrc element
@@ -172,6 +183,7 @@ gst_dyn_appsrc_init (GstDynAppSrc * bin)
   /* init member variable */
   bin->uri = g_strdup (DEFAULT_PROP_URI);
   bin->appsrc_list = NULL;
+  bin->n_source = 0;
 
   GST_OBJECT_FLAG_SET (bin, GST_ELEMENT_FLAG_SOURCE);
 }
@@ -209,6 +221,13 @@ gst_dyn_appsrc_get_property (GObject * object, guint prop_id,
     case PROP_URI:
       g_value_set_string (value, bin->uri);
       break;
+    case PROP_N_SRC:
+    {
+      GST_OBJECT_LOCK (bin);
+      g_value_set_int (value, bin->n_source);
+      GST_OBJECT_UNLOCK (bin);
+      break;
+    }
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -246,6 +265,7 @@ setup_source (GstDynAppSrc * bin)
         g_strdup_printf ("src_%u", g_list_position (bin->appsrc_list, item));
     appsrc_group->srcpad =
         gst_ghost_pad_new_from_template (padname, srcpad, pad_tmpl);
+
     gst_pad_set_active (appsrc_group->srcpad, TRUE);
     gst_element_add_pad (GST_ELEMENT_CAST (bin), appsrc_group->srcpad);
 
@@ -294,13 +314,14 @@ gst_dyn_appsrc_new_appsrc (GstDynAppSrc * bin, const gchar * name)
     GST_OBJECT_UNLOCK (bin);
     return NULL;
   }
-
   appsrc_group = g_malloc0 (sizeof (GstAppSourceGroup));
   appsrc_group->appsrc = gst_element_factory_make ("appsrc", name);
   bin->appsrc_list = g_list_append (bin->appsrc_list, appsrc_group);
+  bin->n_source++;
 
   GST_INFO_OBJECT (bin, "appsrc %p is appended to a list",
       appsrc_group->appsrc);
+  GST_INFO_OBJECT (bin, "source number = %d", bin->n_source);
 
   GST_OBJECT_UNLOCK (bin);
 

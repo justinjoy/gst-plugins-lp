@@ -48,6 +48,8 @@ struct _GstDynAppSrc
   gchar* uri;
 
   GList *appsrc_list;
+
+  gint n_source;
 };
 
 struct _GstDynAppSrcClass
