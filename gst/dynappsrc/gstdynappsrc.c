@@ -245,6 +245,38 @@ gst_dyn_appsrc_finalize (GObject * self)
 }
 
 static gboolean
+gst_dyn_appsrc_handle_src_query (GstPad * pad, GstObject * parent,
+    GstQuery * query)
+{
+  GstPad *target = gst_ghost_pad_get_target (GST_GHOST_PAD_CAST (pad));
+  gboolean res = FALSE;
+
+  /* forward the query to the proxy target pad */
+  if (target) {
+    res = gst_pad_query (target, query);
+    gst_object_unref (target);
+  }
+
+  return res;
+}
+
+static gboolean
+gst_dyn_appsrc_handle_src_event (GstPad * pad, GstObject * parent,
+    GstEvent * event)
+{
+  gboolean res = TRUE;
+  GstPad *target;
+
+  if ((target = gst_ghost_pad_get_target (GST_GHOST_PAD_CAST (pad)))) {
+    res = gst_pad_send_event (target, event);
+    gst_object_unref (target);
+  } else
+    gst_event_unref (event);
+
+  return res;
+}
+
+static gboolean
 setup_source (GstDynAppSrc * bin)
 {
   GList *item;
@@ -265,6 +297,10 @@ setup_source (GstDynAppSrc * bin)
         g_strdup_printf ("src_%u", g_list_position (bin->appsrc_list, item));
     appsrc_group->srcpad =
         gst_ghost_pad_new_from_template (padname, srcpad, pad_tmpl);
+    gst_pad_set_event_function (appsrc_group->srcpad,
+        gst_dyn_appsrc_handle_src_event);
+    gst_pad_set_query_function (appsrc_group->srcpad,
+        gst_dyn_appsrc_handle_src_query);
 
     gst_pad_set_active (appsrc_group->srcpad, TRUE);
     gst_element_add_pad (GST_ELEMENT_CAST (bin), appsrc_group->srcpad);
