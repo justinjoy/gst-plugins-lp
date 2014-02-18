@@ -341,6 +341,8 @@ remove_source (GstDynAppSrc * bin)
 
   g_list_free_full (bin->appsrc_list, g_free);
   bin->appsrc_list = NULL;
+
+  bin->n_source = 0;
 }
 
 static GstElement *
