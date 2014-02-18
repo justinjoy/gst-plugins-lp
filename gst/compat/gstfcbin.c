@@ -923,6 +923,10 @@ caps_notify_cb (GstPad * pad, GParamSpec * unused, GstFCBin * fcbin)
   caps_str = gst_caps_to_string (caps);
   stream_id = gst_pad_get_stream_id (pad);
 
+  if (!stream_id) {
+    goto no_stream_id;
+  }
+
   GST_INFO_OBJECT (fcbin, "caps = %s, stream_id = %s", caps_str, stream_id);
 
   type = get_type (caps_str);
@@ -961,11 +965,27 @@ caps_notify_cb (GstPad * pad, GParamSpec * unused, GstFCBin * fcbin)
   GST_FC_BIN_UNLOCK (fcbin);
 
 done:
-  if (caps)
-    gst_caps_unref (caps);
+  {
+    if (caps)
+      gst_caps_unref (caps);
 
-  g_free (stream_id);
-  g_free (caps_str);
+    g_free (stream_id);
+    g_free (caps_str);
+
+    return;
+  }
+
+  /* ERRORS */
+no_stream_id:
+  {
+    if (caps)
+      gst_caps_unref (caps);
+    g_free (caps_str);
+
+    GST_ELEMENT_ERROR (fcbin, STREAM, DEMUX,
+        ("Error occured trying to get stream-id from ghost sinkpad"),
+        ("no stream-id found at %s", GST_PAD_NAME (pad)));
+  }
 }
 
 static GstPad *
