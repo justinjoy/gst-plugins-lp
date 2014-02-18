@@ -229,9 +229,8 @@ gst_http_ext_bin_update_factories_list (GstHttpExtBin * bin)
   gst_plugin_feature_list_free (factories);
 
   if (!bin->list) {
-    GST_WARNING_OBJECT (bin,
-        "Couldn't list up any of element which handles caps:%s",
-        gst_caps_to_string (bin->caps));
+    GST_WARNING_OBJECT (bin->caps,
+        "Couldn't list up any of element which handles caps");
     return NULL;
   }
 
