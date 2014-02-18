@@ -275,6 +275,11 @@ setup_source (GstDynAppSrc * bin)
   }
   gst_object_unref (pad_tmpl);
 
+  if (ret) {
+    GST_DEBUG_OBJECT (bin, "all appsrc elements are added");
+    gst_element_no_more_pads (GST_ELEMENT_CAST (bin));
+  }
+
   return ret;
 }
 
