@@ -336,6 +336,7 @@ remove_source (GstDynAppSrc * bin)
 
     gst_element_set_state (appsrc_group->appsrc, GST_STATE_NULL);
     gst_bin_remove (GST_BIN_CAST (bin), appsrc_group->appsrc);
+    gst_object_unref (appsrc_group->appsrc);
     appsrc_group->appsrc = NULL;
   }
 
