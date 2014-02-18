@@ -1,2 +1,2 @@
-SUBDIRS = app
-DIST_SUBDIRS = app
+SUBDIRS = app dynappsrc
+DIST_SUBDIRS = app dynappsrc

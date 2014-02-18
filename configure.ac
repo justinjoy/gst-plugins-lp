@@ -218,6 +218,7 @@ tests/Makefile
 tests/check/Makefile
 tests/examples/Makefile
 tests/examples/app/Makefile
+tests/examples/dynappsrc/Makefile
 m4/Makefile
 )
 AC_OUTPUT
