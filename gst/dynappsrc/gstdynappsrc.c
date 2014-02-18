@@ -305,6 +305,7 @@ setup_source (GstDynAppSrc * bin)
     gst_pad_set_active (appsrc_group->srcpad, TRUE);
     gst_element_add_pad (GST_ELEMENT_CAST (bin), appsrc_group->srcpad);
 
+    gst_object_unref (srcpad);
     g_free (padname);
 
     ret = TRUE;
