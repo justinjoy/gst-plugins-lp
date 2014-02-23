@@ -80,7 +80,7 @@ static GstPad *gst_streamid_demux_get_srcpad_by_stream_id (GstStreamidDemux *
 static void gst_streamid_demux_srcpad_create (GstStreamidDemux * demux,
     GstPad * pad, const gchar * stream_id);
 static void gst_streamid_demux_reset (GstStreamidDemux * demux);
-static void gst_streamid_demux_release_srcpads (const GValue * item,
+static void gst_streamid_demux_release_srcpad (const GValue * item,
     GstStreamidDemux * demux);
 
 static void
@@ -312,7 +312,7 @@ no_stream_id:
 }
 
 static void
-gst_streamid_demux_release_srcpads (const GValue * item,
+gst_streamid_demux_release_srcpad (const GValue * item,
     GstStreamidDemux * demux)
 {
   GstPad *pad = g_value_get_object (item);
@@ -344,7 +344,7 @@ gst_streamid_demux_reset (GstStreamidDemux * demux)
   while (itret == GST_ITERATOR_OK || itret == GST_ITERATOR_RESYNC) {
     itret =
         gst_iterator_foreach (it,
-        (GstIteratorForeachFunction) gst_streamid_demux_release_srcpads, demux);
+        (GstIteratorForeachFunction) gst_streamid_demux_release_srcpad, demux);
     if (itret == GST_ITERATOR_RESYNC)
       gst_iterator_resync (it);
   }
