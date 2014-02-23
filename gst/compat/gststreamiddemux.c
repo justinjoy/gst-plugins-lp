@@ -186,8 +186,6 @@ gst_streamid_demux_srcpad_create (GstStreamidDemux * demux, GstPad * pad,
   g_free (padname);
 
   GST_OBJECT_LOCK (demux);
-  if (demux->active_srcpad != NULL)
-    demux->active_srcpad = NULL;
 
   demux->active_srcpad = srcpad;
   g_hash_table_insert (demux->stream_id_pairs, g_strdup (stream_id),
@@ -274,8 +272,6 @@ gst_streamid_demux_event (GstPad * pad, GstObject * parent, GstEvent * event)
       gst_streamid_demux_srcpad_create (demux, pad, stream_id);
     } else if (demux->active_srcpad != active_srcpad) {
       GST_OBJECT_LOCK (demux);
-      if (demux->active_srcpad != NULL)
-        demux->active_srcpad = NULL;
       demux->active_srcpad = active_srcpad;
       GST_OBJECT_UNLOCK (demux);
 
