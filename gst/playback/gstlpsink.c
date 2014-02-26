@@ -1124,11 +1124,22 @@ srcpad_blocked_cb (GstPad * blockedpad, GstPadProbeInfo * info,
   GstLpSink *lpsink = (GstLpSink *) user_data;
   GstSinkChain *chain;
   const gchar *pad_type = NULL;
+  const gchar *parsed_stream_id = NULL;
   gchar *stream_id = NULL;
+  GstEvent *event = GST_PAD_PROBE_INFO_DATA (info);
 
   GST_LP_SINK_LOCK (lpsink);
 
-  stream_id = gst_pad_get_stream_id (blockedpad);
+  g_assert (GST_EVENT_TYPE (event) == GST_EVENT_STREAM_START);
+
+  gst_event_parse_stream_start (event, &parsed_stream_id);
+  stream_id = g_strdup (parsed_stream_id);
+
+  g_assert (stream_id);
+
+  GST_INFO_OBJECT (lpsink, "event:%s is received, stream-id:%s ",
+      GST_EVENT_TYPE_NAME (event), stream_id);
+
   chain = g_object_get_data (G_OBJECT (blockedpad), "lpsink.chain");
   chain->peer_srcpad_blocked = TRUE;
 
@@ -1142,11 +1153,9 @@ srcpad_blocked_cb (GstPad * blockedpad, GstPadProbeInfo * info,
   GST_DEBUG_OBJECT (blockedpad, "%s pad(%s) blocked", pad_type,
       GST_PAD_NAME (blockedpad));
 
-  if (stream_id) {
-    g_signal_emit (G_OBJECT (lpsink),
-        gst_lp_sink_signals[SIGNAL_PAD_BLOCKED], 0, stream_id, TRUE);
-    g_free (stream_id);
-  }
+  g_signal_emit (G_OBJECT (lpsink),
+      gst_lp_sink_signals[SIGNAL_PAD_BLOCKED], 0, stream_id, TRUE);
+  g_free (stream_id);
 
   GST_LP_SINK_UNLOCK (lpsink);
 
