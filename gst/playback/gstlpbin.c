@@ -993,60 +993,66 @@ gst_lp_bin_get_property (GObject * object, guint prop_id, GValue * value,
     }
     case PROP_N_VIDEO:
     {
-      gint n_video;
+      gint n_video = 0;
 
       GST_LP_BIN_LOCK (lpbin);
-      g_object_get (lpbin->fcbin, "n-video", &n_video, NULL);
+      if (lpbin->fcbin)
+        g_object_get (lpbin->fcbin, "n-video", &n_video, NULL);
       g_value_set_int (value, n_video);
       GST_LP_BIN_UNLOCK (lpbin);
       break;
     }
     case PROP_CURRENT_VIDEO:
     {
-      gint current_video;
+      gint current_video = -1;
 
       GST_LP_BIN_LOCK (lpbin);
-      g_object_get (lpbin->fcbin, "current-video", &current_video, NULL);
+      if (lpbin->fcbin)
+        g_object_get (lpbin->fcbin, "current-video", &current_video, NULL);
       g_value_set_int (value, current_video);
       GST_LP_BIN_UNLOCK (lpbin);
       break;
     }
     case PROP_N_AUDIO:
     {
-      gint n_audio;
+      gint n_audio = 0;
 
       GST_LP_BIN_LOCK (lpbin);
-      g_object_get (lpbin->fcbin, "n-audio", &n_audio, NULL);
+      if (lpbin->fcbin)
+        g_object_get (lpbin->fcbin, "n-audio", &n_audio, NULL);
       g_value_set_int (value, n_audio);
       GST_LP_BIN_UNLOCK (lpbin);
       break;
     }
     case PROP_CURRENT_AUDIO:
     {
-      gint current_audio;
+      gint current_audio = -1;
 
       GST_LP_BIN_LOCK (lpbin);
-      g_object_get (lpbin->fcbin, "current-audio", &current_audio, NULL);
+      if (lpbin->fcbin)
+        g_object_get (lpbin->fcbin, "current-audio", &current_audio, NULL);
       g_value_set_int (value, current_audio);
       GST_LP_BIN_UNLOCK (lpbin);
       break;
     }
     case PROP_N_TEXT:
     {
-      gint n_text;
+      gint n_text = 0;
 
       GST_LP_BIN_LOCK (lpbin);
-      g_object_get (lpbin->fcbin, "n-text", &n_text, NULL);
+      if (lpbin->fcbin)
+        g_object_get (lpbin->fcbin, "n-text", &n_text, NULL);
       g_value_set_int (value, n_text);
       GST_LP_BIN_UNLOCK (lpbin);
       break;
     }
     case PROP_CURRENT_TEXT:
     {
-      gint current_text;
+      gint current_text = -1;
 
       GST_LP_BIN_LOCK (lpbin);
-      g_object_get (lpbin->fcbin, "current-text", &current_text, NULL);
+      if (lpbin->fcbin)
+        g_object_get (lpbin->fcbin, "current-text", &current_text, NULL);
       g_value_set_int (value, current_text);
       GST_LP_BIN_UNLOCK (lpbin);
       break;
@@ -1685,7 +1691,8 @@ static GstElement *
 gst_lp_bin_get_current_sink (GstLpBin * lpbin, GstElement ** elem,
     const gchar * dbg, GstLpSinkType type)
 {
-  g_return_val_if_fail ((lpbin->lpsink != NULL), NULL);
+  if (!lpbin->lpsink)
+    return NULL;
 
   GstElement *sink = gst_lp_sink_get_sink (lpbin->lpsink, type);
 
