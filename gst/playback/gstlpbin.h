@@ -128,6 +128,8 @@ struct _GstLpBin
 
   GHashTable *stream_id_blocked;
   gboolean all_pads_blocked;
+
+  gboolean configured_lpbin;
 };
 
 struct _GstLpBinClass
@@ -139,7 +141,7 @@ struct _GstLpBinClass
   void (*about_to_finish) (GstLpBin * lpbin);
 
   /* signal fired to know if we continue trying to decode the given caps */
-    gboolean (*autoplug_continue) (GstElement * element, GstPad * pad,
+  gboolean (*autoplug_continue) (GstElement * element, GstPad * pad,
       GstCaps * caps);
 
   /* signal fired to get a list of factories to try to autoplug */
