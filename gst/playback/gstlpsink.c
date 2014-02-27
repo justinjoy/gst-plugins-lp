@@ -922,7 +922,7 @@ gst_lp_sink_do_reconfigure (GstLpSink * lpsink)
     chain = gen_video_chain (lpsink, chain);
     /* video sink configuration fail, stopping construct pipieline */
     if (lpsink->unsupported_pipeline)
-      return;
+      goto finish_reconfiguration;
 
     if (chain == NULL)
       break;
@@ -974,6 +974,8 @@ gst_lp_sink_do_reconfigure (GstLpSink * lpsink)
 
     GST_DEBUG_OBJECT (lpsink, "text chain added");
   }
+
+finish_reconfiguration:
 
   do_async_done (lpsink);
   GST_LP_SINK_UNLOCK (lpsink);
