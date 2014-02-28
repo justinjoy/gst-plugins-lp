@@ -1298,6 +1298,8 @@ no_fcbin:
   goto done;
 
 emit_streams_ready:
+  /* Application should deallocate ptrArray and decrease reference count each of
+   * caps after use it. */
   g_signal_emit_by_name (lpbin, "streams-ready", video_caps, audio_caps,
       text_caps, cur_video, cur_audio, cur_text, NULL);
   GST_INFO_OBJECT (lpbin, "stream-lock is enabled, streams-ready is emitted");
