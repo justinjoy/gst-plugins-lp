@@ -1637,7 +1637,11 @@ gst_lp_bin_change_state (GstElement * element, GstStateChange transition)
       break;
     case GST_STATE_CHANGE_READY_TO_PAUSED:
 //      gst_lp_bin_make_link(lpbin);
-      g_timeout_add (10000, (GSourceFunc) configuration_timedout_cb, lpbin);
+      if (lpbin->uri && g_str_has_prefix (lpbin->uri, "file://")) {
+        GST_INFO_OBJECT (lpbin,
+            "starting timer when state change from ready to paused");
+        g_timeout_add (10000, (GSourceFunc) configuration_timedout_cb, lpbin);
+      }
       break;
     default:
       break;
