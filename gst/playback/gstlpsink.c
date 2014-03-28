@@ -685,8 +685,9 @@ gen_av_chain (GstLpSink * lpsink, GstSinkChain * vchain, GstSinkChain * achain,
   gst_bin_add (bin, chain->sink);
 
   avchain->video_queue = gst_element_factory_make ("queue", NULL);
-  g_object_set (G_OBJECT (avchain->video_queue), "max-size-buffers", 3,
-      "max-size-bytes", 0, "max-size-time", (gint64) 0, "silent", TRUE, NULL);
+  g_object_set (G_OBJECT (avchain->video_queue), "max-size-buffers", 0,
+      "max-size-bytes", 16 * 1024 * 1024, "max-size-time", (gint64) 0, "silent",
+      TRUE, NULL);
   gst_bin_add (bin, avchain->video_queue);
 
   avchain->audio_queue = gst_element_factory_make ("queue", NULL);
