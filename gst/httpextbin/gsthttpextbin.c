@@ -343,8 +343,9 @@ setup_source (GstHttpExtBin * bin)
 
   protocols = g_strsplit_set (protocol, "+", -1);
   g_free (protocol);
-  g_assert (protocols != NULL);
-  g_assert (g_strv_length (protocols) == 2);
+
+  if (!protocols || g_strv_length (protocols) != 2)
+    goto invalid_protocols;
 
   real_protocol = g_strdup (protocols[0]);
   caps_str = g_strdup_printf ("application/%s", protocols[1]);
@@ -449,6 +450,11 @@ no_filter:
 
     goto done;
   }
+
+invalid_protocols:
+  GST_ELEMENT_ERROR (bin, CORE, FAILED, (NULL), ("protocol is invalid"));
+  ret = FALSE;
+  goto done;
 }
 
 static GstStateChangeReturn

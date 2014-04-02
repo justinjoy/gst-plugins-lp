@@ -874,8 +874,14 @@ gst_lp_bin_retrieve_thumbnail (GstLpBin * lpbin, gint width, gint height,
 static gboolean
 gst_lp_bin_stream_unlock (GstLpBin * lpbin)
 {
-  g_assert (lpbin->use_stream_lock);
-  g_assert (lpbin->lpsink);
+
+  if (!lpbin->lpsink)
+    GST_ELEMENT_ERROR (lpbin, STREAM, FAILED, (NULL),
+        ("lpsink element does not exist."));
+
+  if (!lpbin->use_stream_lock)
+    GST_ELEMENT_ERROR (lpbin, STREAM, FAILED, (NULL),
+        ("use_stream_lock is disabled."));
 
   gboolean ret = FALSE;
 
@@ -1266,9 +1272,9 @@ no_more_pads_cb_from_fcbin (GstElement * fcbin, GstLpBin * lpbin)
   g_value_unset (&item);
   gst_iterator_free (it);
 
-  g_assert (n_video == video_caps->len);
-  g_assert (n_audio == audio_caps->len);
-  g_assert (n_text == text_caps->len);
+  if (n_video != video_caps->len || n_audio != audio_caps->len
+      || n_text != text_caps->len)
+    goto invalid_caps;
 
   // FIXME: this function has too many roles.
   // When detecting no_more_pad from fcbin, unlocking pads of lpsink is sufficient.
@@ -1304,6 +1310,12 @@ emit_streams_ready:
       text_caps, cur_video, cur_audio, cur_text, NULL);
   GST_INFO_OBJECT (lpbin, "stream-lock is enabled, streams-ready is emitted");
   return;
+
+invalid_caps:
+  GST_ELEMENT_ERROR (lpbin, STREAM, FAILED, (NULL),
+      ("number of video(%d)/audio(%d)/text(%d) is not matched.",
+          video_caps->len, audio_caps->len, text_caps->len));
+  goto done;
 }
 
 static void
