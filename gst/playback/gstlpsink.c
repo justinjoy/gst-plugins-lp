@@ -1134,14 +1134,16 @@ srcpad_blocked_cb (GstPad * blockedpad, GstPadProbeInfo * info,
   GST_LP_SINK_LOCK (lpsink);
 
   if (GST_EVENT_TYPE (event) != GST_EVENT_STREAM_START)
-    GST_ELEMENT_ERROR (lpsink, STREAM, FAILED, (NULL),
-        ("Unexpected event is coming %s", GST_EVENT_TYPE_NAME (event)));
+    GST_ELEMENT_ERROR (lpsink, CORE, EVENT, (NULL),
+        ("Internal error (play it again) - unexpected event is coming %s",
+            GST_EVENT_TYPE_NAME (event)));
 
   gst_event_parse_stream_start (event, &parsed_stream_id);
   stream_id = g_strdup (parsed_stream_id);
 
   if (!stream_id)
-    GST_ELEMENT_ERROR (lpsink, STREAM, FAILED, (NULL), ("Stream-id is empty."));
+    GST_ELEMENT_ERROR (lpsink, CORE, EVENT, (NULL),
+        ("Internal error (play it again) - stream-id is empty."));
 
   GST_INFO_OBJECT (lpsink, "event:%s is received, stream-id:%s ",
       GST_EVENT_TYPE_NAME (event), stream_id);
