@@ -230,6 +230,8 @@ activate_chain (GstElement * sink, GstTextGroup * tgroup, gboolean activate)
   gst_element_set_state (tgroup->queue, state);
   gst_element_set_state (tgroup->appsink, state);
 
+  gst_object_unref (parent);
+
   return TRUE;
 }
 
