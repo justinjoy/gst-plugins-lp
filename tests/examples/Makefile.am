@@ -1,2 +1,2 @@
-SUBDIRS = app dynappsrc
-DIST_SUBDIRS = app dynappsrc
+SUBDIRS = app dynappsrc customquery
+DIST_SUBDIRS = app dynappsrc customquery
