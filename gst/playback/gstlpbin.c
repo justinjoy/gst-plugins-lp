@@ -167,7 +167,8 @@ static void gst_lp_bin_set_interleaving_type (GstLpBin * lpbin,
     gint interleaving_type);
 static void gst_lp_bin_element_added_cb (GstBin * lpbin, GstElement * element,
     gpointer user_data);
-static void gst_lp_bin_set_property_table (GstLpBin * lpbin, gchar * maps);
+static void gst_lp_bin_set_property_table (GstLpBin * lpbin,
+    const gchar * maps);
 static void gst_lp_bin_do_property_set (GstLpBin * lpbin, GstElement * element);
 
 static GstTagList *gst_lp_bin_get_video_tags (GstLpBin * lpbin, gint stream);
@@ -718,7 +719,7 @@ gst_lp_bin_init (GstLpBin * lpbin)
   lpbin->pending_audio_resource = FALSE;
 
   g_rw_lock_init (&lock);
-  lpbin->property_pairs = NULL;
+  lpbin->smart_prop = NULL;
   lpbin->elements_str = NULL;
 
   lpbin->buffer_duration = DEFAULT_BUFFER_DURATION;
@@ -776,10 +777,8 @@ gst_lp_bin_finalize (GObject * obj)
     gst_object_unref (lpbin->audio_sink);
   }
 
-  if (lpbin->property_pairs) {
-    g_hash_table_remove_all (lpbin->property_pairs);
-    g_hash_table_destroy (lpbin->property_pairs);
-  }
+  g_free (lpbin->smart_prop);
+  lpbin->smart_prop = NULL;
 
   if (lpbin->elements_str) {
     g_free (lpbin->elements_str);
@@ -962,7 +961,12 @@ gst_lp_bin_set_property (GObject * object, guint prop_id,
       lpbin->use_stream_lock = g_value_get_boolean (value);
       break;
     case PROP_SMART_PROPERTIES:
-      gst_lp_bin_set_property_table (lpbin, g_value_get_string (value));
+      g_free (lpbin->smart_prop);
+      lpbin->smart_prop = g_strdup (g_value_get_string (value));
+
+      if (lpbin->source)
+        g_object_set (lpbin->source, "smart-properties", lpbin->smart_prop,
+            NULL);
       break;
     case PROP_BUFFER_SIZE:
       lpbin->buffer_size = g_value_get_int (value);
@@ -1398,6 +1402,8 @@ notify_source_cb (GstElement * decodebin, GParamSpec * pspec, GstLpBin * lpbin)
   lpbin->source = source;
   GST_OBJECT_UNLOCK (lpbin);
 
+  g_object_set (lpbin->source, "smart-properties", lpbin->smart_prop, NULL);
+
   g_object_notify (G_OBJECT (lpbin), "source");
   g_signal_emit (lpbin, gst_lp_bin_signals[SIGNAL_SOURCE_SETUP], 0,
       lpbin->source);
@@ -1750,9 +1756,6 @@ gst_lp_bin_element_added_cb (GstBin * bin, GstElement * element,
   GST_INFO_OBJECT (GST_ELEMENT_CAST (lpbin), "%s element added, (state = %d)",
       elem_name, state);
 
-  if (lpbin->property_pairs)
-    gst_lp_bin_do_property_set (lpbin, element);
-
   g_free (elem_name);
 }
 
@@ -2081,66 +2084,6 @@ gst_lp_bin_autoplug_factories (GstElement * element, GstPad * pad,
   gst_plugin_feature_list_free (mylist);
 
   return result;
-}
-
-static void
-gst_lp_bin_set_property_table (GstLpBin * lpbin, gchar * maps)
-{
-  gchar **properties = NULL;
-  gint i;
-
-  if (maps == NULL) {
-    goto done;
-  }
-
-  if (lpbin->property_pairs == NULL) {
-    lpbin->property_pairs = g_hash_table_new (g_str_hash, g_str_equal);
-  }
-
-  properties = g_strsplit_set (maps, "|", -1);
-
-  i = 0;
-  while (i < g_strv_length (properties)) {
-    g_rw_lock_writer_lock (&lock);
-    g_hash_table_insert (lpbin->property_pairs, g_strdup (properties[i]),
-        g_strdup (properties[i + 1]));
-    g_rw_lock_writer_unlock (&lock);
-    i = i + 2;
-  }
-
-done:
-  if (properties)
-    g_strfreev (properties);
-}
-
-static void
-gst_lp_bin_do_property_set (GstLpBin * lpbin, GstElement * element)
-{
-  GHashTableIter iter;
-  gpointer key, value;
-
-  if (lpbin->elements_str != NULL
-      && g_strrstr (lpbin->elements_str, GST_ELEMENT_NAME (element))) {
-    GST_DEBUG_OBJECT (lpbin,
-        "gst_lp_bin_do_property_set : element = %s already did it",
-        GST_ELEMENT_NAME (element));
-    return;
-  }
-
-  lpbin->elements_str =
-      g_strconcat (g_strdup_printf ("%s:", GST_ELEMENT_NAME (element)),
-      lpbin->elements_str, NULL);
-
-  g_hash_table_iter_init (&iter, lpbin->property_pairs);
-  while (g_hash_table_iter_next (&iter, &key, &value)) {
-    GParamSpec *param;
-    if (param =
-        g_object_class_find_property (G_OBJECT_GET_CLASS (element),
-            (gchar *) key)) {
-      gst_util_set_object_arg (G_OBJECT (element), param->name,
-          (gchar *) value);
-    }
-  }
 }
 
 static void

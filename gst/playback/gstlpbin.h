@@ -107,8 +107,8 @@ struct _GstLpBin
   gboolean pending_video_resource;
   gboolean pending_audio_resource;
 
-  /* This table contains property name and value */
-  GHashTable *property_pairs;
+  /* This structure contains property name and value */
+  gchar *smart_prop;
 
   /* this string contains all of elements from decodebin */
   gchar *elements_str;
