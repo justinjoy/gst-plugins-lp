@@ -27,19 +27,13 @@ playbin_element_added_cb (GstBin * playbin, GstElement * element,
 static void
 source_setup (GstElement * element, GstElement * source, gpointer data)
 {
-  GstStructure *s;
-  GstStructure *s2;
+  gchar *smart_prop, *result;
 
   GST_WARNING ("source_setup");
-  s = gst_structure_new ("smart-properties",
-      "thumbnail-mode", G_TYPE_BOOLEAN, TRUE, "dlna-opval", G_TYPE_INT, 0x99,
-      NULL);
 
-  g_object_set (source, "smart-properties", s, NULL);
-  g_object_get (source, "smart-properties", &s2, NULL);
-  GST_WARNING ("%s", gst_structure_to_string (s2));
-
-  gst_structure_free (s);
+  smart_prop =
+      "smart-properties, thumbnail-mode=(boolean)true, dlna-opval=(int)10";
+  g_object_set (source, "smart-properties", smart_prop, NULL);
 }
 
 static gboolean
