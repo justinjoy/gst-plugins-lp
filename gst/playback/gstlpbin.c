@@ -640,13 +640,6 @@ gst_lp_bin_bus_cb (GstBus * bus, GstMessage * message, gpointer data)
                 "thumbnail-mode"))
           g_object_set (elem, "thumbnail-mode", lpbin->thumbnail_mode, NULL);
 
-      } else if (newstate == GST_STATE_PAUSED
-          && GST_IS_ELEMENT (GST_MESSAGE_SRC (message))) {
-        GstElement *elem = NULL;
-        elem = GST_ELEMENT (GST_MESSAGE_SRC (message));
-
-        if (lpbin == elem)
-          lpbin->configured_lpbin = TRUE;
       }
     }
       break;
@@ -654,16 +647,6 @@ gst_lp_bin_bus_cb (GstBus * bus, GstMessage * message, gpointer data)
   }
 
   return TRUE;
-}
-
-static gboolean
-configuration_timedout_cb (GstLpBin * lpbin)
-{
-  if (!lpbin->configured_lpbin) {
-    GST_ELEMENT_ERROR (lpbin, STREAM, FAILED, (NULL),
-        ("Timeout occurred while trying to configure lpbin"));
-  }
-  return FALSE;
 }
 
 static void
@@ -740,8 +723,6 @@ gst_lp_bin_init (GstLpBin * lpbin)
   lpbin->stream_id_blocked = NULL;
 
   lpbin->all_pads_blocked = FALSE;
-
-  lpbin->configured_lpbin = FALSE;
 }
 
 static void
@@ -1655,7 +1636,6 @@ gst_lp_bin_change_state (GstElement * element, GstStateChange transition)
       break;
     case GST_STATE_CHANGE_READY_TO_PAUSED:
 //      gst_lp_bin_make_link(lpbin);
-      g_timeout_add (10000, (GSourceFunc) configuration_timedout_cb, lpbin);
       break;
     default:
       break;
