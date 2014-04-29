@@ -1029,17 +1029,18 @@ gst_fc_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
   GST_INFO_OBJECT (fcbin, "gst_fc_bin_request_new_pad : padname = %s", padname);
   ghost_sinkpad = gst_ghost_pad_new_no_target (padname, GST_PAD_SINK);
   g_free (padname);
+
+  block_id =
+      gst_pad_add_probe (ghost_sinkpad, GST_PAD_PROBE_TYPE_BLOCK_DOWNSTREAM,
+      NULL, NULL, NULL);
+  g_object_set_data (G_OBJECT (ghost_sinkpad), "block_id", (gpointer) block_id);
+
   g_signal_connect (G_OBJECT (ghost_sinkpad), "notify::caps",
       G_CALLBACK (caps_notify_cb), fcbin);
 
   g_ptr_array_add (fcbin->sinkpads, gst_object_ref (ghost_sinkpad));
   gst_pad_set_active (ghost_sinkpad, TRUE);
   gst_element_add_pad (GST_ELEMENT_CAST (fcbin), ghost_sinkpad);
-
-  block_id =
-      gst_pad_add_probe (ghost_sinkpad, GST_PAD_PROBE_TYPE_BLOCK_DOWNSTREAM,
-      NULL, NULL, NULL);
-  g_object_set_data (G_OBJECT (ghost_sinkpad), "block_id", (gpointer) block_id);
 
 done:
   return ghost_sinkpad;
