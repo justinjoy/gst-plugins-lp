@@ -62,10 +62,8 @@ struct _GstLpBin
   guint64 buffer_duration;      /* When buffering, the max buffer duration (ns) */
   guint buffer_size;            /* When buffering, the max buffer size (bytes) */
 
-  GstBus *bus;
 
   gchar *uri;
-  gulong bus_msg_cb_id;
   gulong pad_added_id;
   gulong pad_removed_id;
   gulong no_more_pads_id;
@@ -97,15 +95,8 @@ struct _GstLpBin
   guint32 elements_cookie;
   GList *elements;              /* factories we can use for selecting elements */
 
-  gboolean thumbnail_mode;
-  gboolean pending_thumbnail;
   gboolean use_buffering;
   gboolean use_stream_lock;
-
-  guint video_resource;
-  guint audio_resource;
-  gboolean pending_video_resource;
-  gboolean pending_audio_resource;
 
   /* This structure contains property name and value */
   gchar *smart_prop;
@@ -123,8 +114,6 @@ struct _GstLpBin
   gboolean *audio_chain_linked;
   gboolean *video_chain_linked;
   gboolean *text_chain_linked;
-
-  gint interleaving_type;
 
   GHashTable *stream_id_blocked;
   gboolean all_pads_blocked;

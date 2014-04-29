@@ -52,16 +52,11 @@ enum
   PROP_CURRENT_TEXT,
   PROP_AUDIO_SINK,
   PROP_VIDEO_SINK,
-  PROP_THUMBNAIL_MODE,
   PROP_USE_BUFFERING,
-  PROP_VIDEO_RESOURCE,
-  PROP_AUDIO_RESOURCE,
   PROP_MUTE,
   PROP_SMART_PROPERTIES,
   PROP_BUFFER_SIZE,
   PROP_BUFFER_DURATION,
-  PROP_INTERLEAVING_TYPE,
-  PROP_USE_STREAM_LOCK,
   PROP_LAST
 };
 
@@ -86,7 +81,6 @@ enum
   LAST_SIGNAL
 };
 
-#define DEFAULT_THUMBNAIL_MODE FALSE
 #define DEFAULT_USE_BUFFERING FALSE
 #define DEFAULT_BUFFER_DURATION   -1
 #define DEFAULT_BUFFER_SIZE       -1
@@ -161,15 +155,8 @@ static void gst_lp_bin_deactive (GstLpBin * lpbin);
 static GstBuffer *gst_lp_bin_retrieve_thumbnail (GstLpBin * lpbin, gint width,
     gint height, gchar * format);
 static gboolean gst_lp_bin_stream_unlock (GstLpBin * lpbin);
-static void gst_lp_bin_set_thumbnail_mode (GstLpBin * lpbin,
-    gboolean thumbnail_mode);
-static void gst_lp_bin_set_interleaving_type (GstLpBin * lpbin,
-    gint interleaving_type);
 static void gst_lp_bin_element_added_cb (GstBin * lpbin, GstElement * element,
     gpointer user_data);
-static void gst_lp_bin_set_property_table (GstLpBin * lpbin,
-    const gchar * maps);
-static void gst_lp_bin_do_property_set (GstLpBin * lpbin, GstElement * element);
 
 static GstTagList *gst_lp_bin_get_video_tags (GstLpBin * lpbin, gint stream);
 static GstTagList *gst_lp_bin_get_audio_tags (GstLpBin * lpbin, gint stream);
@@ -315,25 +302,10 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
           "the audio output element to use (NULL = default sink)",
           GST_TYPE_ELEMENT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
-  g_object_class_install_property (gobject_klass, PROP_THUMBNAIL_MODE,
-      g_param_spec_boolean ("thumbnail-mode", "Thumbnail mode",
-          "Thumbnail mode", DEFAULT_THUMBNAIL_MODE,
-          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
   g_object_class_install_property (gobject_klass, PROP_USE_BUFFERING,
       g_param_spec_boolean ("use-buffering", "Use buffering",
           "set use-buffering property at multiqueue", DEFAULT_USE_BUFFERING,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property (gobject_klass, PROP_VIDEO_RESOURCE,
-      g_param_spec_uint ("video-resource", "Acquired video resource",
-          "Acquired vidio resource", 0, G_MAXUINT, 0,
-          G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property (gobject_klass, PROP_AUDIO_RESOURCE,
-      g_param_spec_uint ("audio-resource", "Acquired audio resource",
-          "Acquired audio resource.(the most significant bit - 0: ADEC, 1: MIX / the remains - channel number)",
-          0, G_MAXUINT, 0, G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
 
   /**
    * GstLpBin::smart-properties:
@@ -361,21 +333,6 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
           "Buffer duration when buffering network streams",
           -1, G_MAXINT64, DEFAULT_BUFFER_DURATION,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property (gobject_klass, PROP_INTERLEAVING_TYPE,
-      g_param_spec_int ("interleaving-type", "Interleaving type",
-          "Interleaving type uses for vdecsink",
-          0, 2147483647, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  /**
-   *  GstLpBin::stream-lock:
-   *
-   *  Perform streaming lock before completing state transition.
-   */
-  g_object_class_install_property (gobject_klass, PROP_USE_STREAM_LOCK,
-      g_param_spec_boolean ("use-stream-lock", "Use stream lock",
-          "set use-stream-lock property for stream handling",
-          DEFAULT_USE_STREAM_LOCK, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   gst_lp_bin_signals[SIGNAL_ABOUT_TO_FINISH] =
       g_signal_new ("about-to-finish", G_TYPE_FROM_CLASS (klass),
@@ -604,65 +561,11 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
   klass->stream_unlock = GST_DEBUG_FUNCPTR (gst_lp_bin_stream_unlock);
 }
 
-static gboolean
-gst_lp_bin_bus_cb (GstBus * bus, GstMessage * message, gpointer data)
-{
-  GstLpBin *lpbin = (GstLpBin *) data;
-
-  GST_DEBUG_OBJECT (lpbin, "src = %s, msg type = %s",
-      GST_MESSAGE_SRC_NAME (message), GST_MESSAGE_TYPE_NAME (message));
-
-  switch (GST_MESSAGE_TYPE (message)) {
-    case GST_MESSAGE_STATE_CHANGED:
-    {
-      GstState oldstate, newstate, pending;
-      gst_message_parse_state_changed (message, &oldstate, &newstate, &pending);
-
-      GST_DEBUG_OBJECT (lpbin,
-          "state %s -> %s, pending-state = %s",
-          gst_element_state_get_name (oldstate),
-          gst_element_state_get_name (newstate),
-          gst_element_state_get_name (pending));
-
-      if (newstate == GST_STATE_READY
-          && GST_IS_ELEMENT (GST_MESSAGE_SRC (message))) {
-        GstElement *elem = NULL;
-        gchar *elem_name = NULL;
-        GstElementFactory *factory = NULL;
-        const gchar *klass = NULL;
-
-        elem = GST_ELEMENT (GST_MESSAGE_SRC (message));
-        factory = gst_element_get_factory (elem);
-        klass = gst_element_factory_get_klass (factory);
-
-        if (lpbin->thumbnail_mode && g_strrstr (klass, "Demux")
-            && g_object_class_find_property (G_OBJECT_GET_CLASS (elem),
-                "thumbnail-mode"))
-          g_object_set (elem, "thumbnail-mode", lpbin->thumbnail_mode, NULL);
-
-      }
-    }
-      break;
-
-  }
-
-  return TRUE;
-}
-
 static void
 gst_lp_bin_init (GstLpBin * lpbin)
 {
   GST_DEBUG_CATEGORY_INIT (gst_lp_bin_debug, "lpbin", 0,
       "Lightweight Play Bin");
-
-  lpbin->bus = gst_pipeline_get_bus (GST_PIPELINE (lpbin));
-  if (lpbin->bus) {
-    gst_bus_add_signal_watch (lpbin->bus);
-    lpbin->bus_msg_cb_id =
-        g_signal_connect (lpbin->bus, "message", G_CALLBACK (gst_lp_bin_bus_cb),
-        lpbin);
-    gst_object_unref (lpbin->bus);
-  }
 
   lpbin->element_added_id =
       g_signal_connect (lpbin, "element-added",
@@ -691,15 +594,8 @@ gst_lp_bin_init (GstLpBin * lpbin)
   lpbin->audio_pad = NULL;
   lpbin->text_pad = NULL;
 
-  lpbin->thumbnail_mode = DEFAULT_THUMBNAIL_MODE;
-  lpbin->pending_thumbnail = FALSE;
   lpbin->use_buffering = DEFAULT_USE_BUFFERING;
   lpbin->use_stream_lock = DEFAULT_USE_STREAM_LOCK;
-
-  lpbin->video_resource = 0;
-  lpbin->audio_resource = 0;
-  lpbin->pending_video_resource = FALSE;
-  lpbin->pending_audio_resource = FALSE;
 
   g_rw_lock_init (&lock);
   lpbin->smart_prop = NULL;
@@ -713,8 +609,6 @@ gst_lp_bin_init (GstLpBin * lpbin)
   lpbin->audio_chain_linked = FALSE;
   lpbin->video_chain_linked = FALSE;
   lpbin->text_chain_linked = FALSE;
-
-  lpbin->interleaving_type = 0;
 
   lpbin->stream_id_blocked =
       g_hash_table_new_full (g_str_hash, g_str_equal, (GDestroyNotify) g_free,
@@ -904,42 +798,8 @@ gst_lp_bin_set_property (GObject * object, guint prop_id,
       gst_lp_bin_set_sink (lpbin, &lpbin->audio_sink, "audio",
           g_value_get_object (value));
       break;
-    case PROP_THUMBNAIL_MODE:
-      gst_lp_bin_set_thumbnail_mode (lpbin, g_value_get_boolean (value));
-      break;
     case PROP_USE_BUFFERING:
       lpbin->use_buffering = g_value_get_boolean (value);
-      break;
-    case PROP_VIDEO_RESOURCE:
-      lpbin->video_resource = g_value_get_uint (value);
-
-      if (lpbin->lpsink) {
-        g_object_set (lpbin->lpsink, "video-resource", lpbin->video_resource,
-            NULL);
-        GST_DEBUG_OBJECT (lpbin, "setting video resource [%x]",
-            lpbin->video_resource);
-      } else {
-        lpbin->pending_video_resource = TRUE;
-        GST_DEBUG_OBJECT (lpbin, "pending video resource property set[%x]",
-            lpbin->video_resource);
-      }
-      break;
-    case PROP_AUDIO_RESOURCE:
-      lpbin->audio_resource = g_value_get_uint (value);
-
-      if (lpbin->lpsink) {
-        g_object_set (lpbin->lpsink, "audio-resource", lpbin->audio_resource,
-            NULL);
-        GST_DEBUG_OBJECT (lpbin, "setting audio resource [%x]",
-            lpbin->audio_resource);
-      } else {
-        lpbin->pending_audio_resource = TRUE;
-        GST_DEBUG_OBJECT (lpbin, "pending audio resource property set[%x]",
-            lpbin->audio_resource);
-      }
-      break;
-    case PROP_USE_STREAM_LOCK:
-      lpbin->use_stream_lock = g_value_get_boolean (value);
       break;
     case PROP_SMART_PROPERTIES:
       g_free (lpbin->smart_prop);
@@ -954,9 +814,6 @@ gst_lp_bin_set_property (GObject * object, guint prop_id,
       break;
     case PROP_BUFFER_DURATION:
       lpbin->buffer_duration = g_value_get_int64 (value);
-      break;
-    case PROP_INTERLEAVING_TYPE:
-      gst_lp_bin_set_interleaving_type (lpbin, g_value_get_int (value));
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -1060,9 +917,6 @@ gst_lp_bin_get_property (GObject * object, guint prop_id, GValue * value,
       break;
     case PROP_MUTE:
       break;
-    case PROP_THUMBNAIL_MODE:
-      g_value_set_boolean (value, lpbin->thumbnail_mode);
-      break;
     case PROP_USE_BUFFERING:
       g_value_set_boolean (value, lpbin->use_buffering);
       break;
@@ -1075,12 +929,6 @@ gst_lp_bin_get_property (GObject * object, guint prop_id, GValue * value,
       GST_OBJECT_LOCK (lpbin);
       g_value_set_int64 (value, lpbin->buffer_duration);
       GST_OBJECT_UNLOCK (lpbin);
-      break;
-    case PROP_INTERLEAVING_TYPE:
-      g_value_set_int (value, lpbin->interleaving_type);
-      break;
-    case PROP_USE_STREAM_LOCK:
-      g_value_set_boolean (value, lpbin->use_stream_lock);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -1379,6 +1227,8 @@ static void
 notify_source_cb (GstElement * decodebin, GParamSpec * pspec, GstLpBin * lpbin)
 {
   GstElement *source;
+  GstQuery *query;
+  GstStructure *s;
 
   g_object_get (lpbin->uridecodebin, "source", &source, NULL);
 
@@ -1394,6 +1244,19 @@ notify_source_cb (GstElement * decodebin, GParamSpec * pspec, GstLpBin * lpbin)
   g_object_notify (G_OBJECT (lpbin), "source");
   g_signal_emit (lpbin, gst_lp_bin_signals[SIGNAL_SOURCE_SETUP], 0,
       lpbin->source);
+
+  /* custom query for get use-stream-lock value */
+  s = gst_structure_new ("smart-properties",
+      "use-stream-lock", G_TYPE_BOOLEAN, NULL, NULL);
+  query = gst_query_new_custom (GST_QUERY_CUSTOM, s);
+
+  if (gst_element_query (source, query)) {
+    const GstStructure *structure = gst_query_get_structure (query);
+    gst_structure_get (structure, "use-stream-lock", G_TYPE_BOOLEAN,
+        &lpbin->use_stream_lock, NULL);
+  }
+
+  gst_query_unref (query);
 }
 
 static void
@@ -1416,33 +1279,6 @@ unknown_type_cb (GstElement * decodebin, GstPad * pad, GstCaps * caps,
 
   // TODO
 }
-
-static void
-gst_lp_bin_set_thumbnail_mode (GstLpBin * lpbin, gboolean thumbnail_mode)
-{
-  GST_DEBUG_OBJECT (lpbin, "set thumbnail mode to lpsink as %d",
-      thumbnail_mode);
-
-  GST_LP_BIN_LOCK (lpbin);
-  lpbin->thumbnail_mode = thumbnail_mode;
-
-  if (lpbin->lpsink)
-    gst_lp_sink_set_thumbnail_mode (lpbin->lpsink, thumbnail_mode);
-  else
-    lpbin->pending_thumbnail = thumbnail_mode;
-
-  GST_LP_BIN_UNLOCK (lpbin);
-}
-
-static void
-gst_lp_bin_set_interleaving_type (GstLpBin * lpbin, gint interleaving_type)
-{
-  GST_DEBUG_OBJECT (lpbin, "set interleaving-type to lpsink as %d",
-      interleaving_type);
-  lpbin->interleaving_type = interleaving_type;
-  gst_lp_sink_set_interleaving_type (lpbin->lpsink, interleaving_type);
-}
-
 
 static gboolean
 gst_lp_bin_setup_element (GstLpBin * lpbin)
@@ -1523,23 +1359,6 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
   lpbin->pad_blocked_id =
       g_signal_connect (lpbin->lpsink, "pad-blocked",
       G_CALLBACK (pad_blocked_cb), lpbin);
-  if (lpbin->pending_thumbnail) {
-    gst_lp_sink_set_thumbnail_mode (lpbin->lpsink, TRUE);
-    lpbin->pending_thumbnail = FALSE;
-  }
-
-  /* 
-   * FIXME: These are not compatible with multi-sink support.
-   */
-  if (lpbin->pending_video_resource) {
-    g_object_set (lpbin->lpsink, "video-resource", lpbin->video_resource, NULL);
-    lpbin->pending_video_resource = FALSE;
-  }
-
-  if (lpbin->pending_audio_resource) {
-    g_object_set (lpbin->lpsink, "audio-resource", lpbin->audio_resource, NULL);
-    lpbin->pending_audio_resource = FALSE;
-  }
 
   gst_bin_add (GST_BIN_CAST (lpbin), lpbin->lpsink);
 
@@ -1611,9 +1430,6 @@ gst_lp_bin_deactive (GstLpBin * lpbin)
   if (lpsink_sinkpad)
     gst_object_unref (lpsink_sinkpad);
 
-  gst_bus_remove_signal_watch (lpbin->bus);
-
-  REMOVE_SIGNAL (lpbin->bus, lpbin->bus_msg_cb_id);
   REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->pad_added_id);
   REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->pad_removed_id);
   REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->no_more_pads_id);

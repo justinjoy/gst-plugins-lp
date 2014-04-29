@@ -99,6 +99,8 @@ struct _GstLpSink
 
   guint nb_video;
   guint nb_audio;
+
+  gboolean query_smart_prop;
 };
 
 struct _GstLpSinkClass

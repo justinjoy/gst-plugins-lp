@@ -60,8 +60,6 @@ enum
   PROP_0,
   PROP_VIDEO_SINK,
   PROP_AUDIO_SINK,
-  PROP_VIDEO_RESOURCE,
-  PROP_AUDIO_RESOURCE,
   PROP_AUDIO_ONLY,
   PROP_LAST
 };
@@ -168,16 +166,6 @@ gst_lp_sink_class_init (GstLpSinkClass * klass)
           "the audio output element to use (NULL = default sink)",
           GST_TYPE_ELEMENT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
-  g_object_class_install_property (gobject_klass, PROP_VIDEO_RESOURCE,
-      g_param_spec_uint ("video-resource", "Acquired video resource",
-          "Acquired video resource", 0, G_MAXUINT, 0,
-          G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property (gobject_klass, PROP_AUDIO_RESOURCE,
-      g_param_spec_uint ("audio-resource", "Acquired audio resource",
-          "Acquired audio resource (the most significant bit - 0: ADEC, 1: MIX / the remains - channel number)",
-          0, G_MAXUINT, 0, G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
-
   g_object_class_install_property (gobject_klass, PROP_AUDIO_ONLY,
       g_param_spec_boolean ("audio-only", "Audio only stream",
           "Audio only stream", FALSE,
@@ -268,6 +256,8 @@ gst_lp_sink_init (GstLpSink * lpsink)
 
   lpsink->nb_video = 0;
   lpsink->nb_audio = 0;
+
+  lpsink->query_smart_prop = FALSE;
 }
 
 static void
@@ -344,20 +334,6 @@ gst_lp_sink_finalize (GObject * obj)
     lpsink->video_pad = NULL;
   }
   G_OBJECT_CLASS (parent_class)->finalize (obj);
-}
-
-void
-gst_lp_sink_set_thumbnail_mode (GstLpSink * lpsink, gboolean thumbnail_mode)
-{
-  GST_DEBUG_OBJECT (lpsink, "set thumbnail mode as %d", thumbnail_mode);
-  lpsink->thumbnail_mode = thumbnail_mode;
-}
-
-void
-gst_lp_sink_set_interleaving_type (GstLpSink * lpsink, gint interleaving_type)
-{
-  GST_DEBUG_OBJECT (lpsink, "set interleaving type as %d", interleaving_type);
-  lpsink->interleaving_type = interleaving_type;
 }
 
 void
@@ -906,11 +882,30 @@ gst_lp_sink_set_all_pads_blocked (GstLpSink * lpsink)
   GST_LP_SINK_UNLOCK (lpsink);
 }
 
+/* FIXME: It is temporal code after a/vdecsink elements are ready to use custom query
+ *        then It can be removed. */
+static void
+gst_lp_sink_get_smart_properties (GstLpSink * lpsink)
+{
+  GstSmartPropertiesReturn ret;
+
+  ret = gst_element_get_smart_properties (GST_ELEMENT_CAST (lpsink),
+      "thumbnail-mode", &lpsink->thumbnail_mode,
+      "interleaving-type", &lpsink->interleaving_type,
+      "video-resource", &lpsink->video_resource,
+      "audio-resource", &lpsink->audio_resource, NULL);
+
+  GST_INFO_OBJECT (lpsink, "smart-properties return is %d", ret);
+}
+
+
 static void
 gst_lp_sink_do_reconfigure (GstLpSink * lpsink)
 {
   GList *item = NULL;
   GstSinkChain *chain = NULL;
+
+  gst_lp_sink_get_smart_properties (lpsink);
 
   GST_LP_SINK_LOCK (lpsink);
 
@@ -1314,6 +1309,7 @@ gst_lp_sink_request_new_pad (GstElement * element, GstPadTemplate * templ,
     goto unknown_template;
 
   pad = gst_lp_sink_request_pad (lpsink, type);
+
   return pad;
 
 unknown_template:
@@ -1412,12 +1408,6 @@ gst_lp_sink_set_property (GObject * object, guint prop_id,
     case PROP_AUDIO_SINK:
       gst_lp_sink_set_sink (lpsink, GST_LP_SINK_TYPE_AUDIO,
           g_value_get_object (value));
-      break;
-    case PROP_VIDEO_RESOURCE:
-      lpsink->video_resource = g_value_get_uint (value);
-      break;
-    case PROP_AUDIO_RESOURCE:
-      lpsink->audio_resource = g_value_get_uint (value);
       break;
     case PROP_AUDIO_ONLY:
       lpsink->audio_only = g_value_get_boolean (value);
