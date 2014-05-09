@@ -1228,6 +1228,10 @@ gst_fc_bin_change_state (GstElement * element, GstStateChange transition)
 {
   GstStateChangeReturn ret;
   GstFCBin *fcbin;
+  GstIterator *it;
+  GstPad *fcbin_sinkpad;
+  gboolean done = FALSE;
+  GValue item = { 0, };
 
   fcbin = GST_FC_BIN (element);
 
@@ -1236,15 +1240,37 @@ gst_fc_bin_change_state (GstElement * element, GstStateChange transition)
   if (ret == GST_STATE_CHANGE_FAILURE)
     goto failure;
 
-  GST_FC_BIN_LOCK (fcbin);
   switch (transition) {
     case GST_STATE_CHANGE_PAUSED_TO_READY:
       gst_fc_bin_reset (fcbin);
+
+      it = gst_element_iterate_sink_pads (fcbin);
+
+      while (!done) {
+        switch (gst_iterator_next (it, &item)) {
+          case GST_ITERATOR_OK:
+            fcbin_sinkpad = g_value_get_object (&item);
+            gst_fc_bin_release_pad (fcbin, fcbin_sinkpad);
+            g_value_reset (&item);
+            break;
+          case GST_ITERATOR_RESYNC:
+            gst_iterator_resync (it);
+            break;
+          case GST_ITERATOR_ERROR:
+            GST_ERROR_OBJECT (fcbin, "Could not iterate over sinkpads");
+            done = TRUE;
+            break;
+          case GST_ITERATOR_DONE:
+            done = TRUE;
+            break;
+        }
+      }
+      g_value_unset (&item);
+      gst_iterator_free (it);
       break;
     default:
       break;
   }
-  GST_FC_BIN_UNLOCK (fcbin);
 
   /* ERRORS */
 failure:
