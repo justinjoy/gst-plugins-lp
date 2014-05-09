@@ -174,6 +174,7 @@ void gst_lp_sink_set_interleaving_type (GstLpSink * lpsink,
 
 gboolean gst_lp_sink_reconfigure (GstLpSink * lpsink);
 void gst_lp_sink_set_all_pads_blocked (GstLpSink * lpsink);
+void gst_lp_sink_release_pad (GstLpSink * lpsink, GstPad * pad);
 
 G_END_DECLS
 #endif // __GST_LP_SINK_H__

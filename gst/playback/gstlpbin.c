@@ -1156,23 +1156,29 @@ pad_added_cb_from_fcbin (GstElement * fcbin, GstPad * pad, GstLpBin * lpbin)
 
   if (gst_pad_get_direction (pad) == GST_PAD_SRC) {
     if (type == GST_LP_SINK_TYPE_VIDEO) {
-      lpbin->video_pad = pad;
+      lpbin->video_pad = gst_object_ref (pad);
       lpsink_sinkpad =
           gst_element_get_request_pad (lpbin->lpsink, "video_sink");
       gst_pad_link (pad, lpsink_sinkpad);
+      g_object_set_data (G_OBJECT (lpbin->video_pad), "lpsink.sinkpad",
+          lpsink_sinkpad);
     }
 
     if (type == GST_LP_SINK_TYPE_AUDIO) {
-      lpbin->audio_pad = pad;
+      lpbin->audio_pad = gst_object_ref (pad);
       lpsink_sinkpad =
           gst_element_get_request_pad (lpbin->lpsink, "audio_sink");
       gst_pad_link (pad, lpsink_sinkpad);
+      g_object_set_data (G_OBJECT (lpbin->audio_pad), "lpsink.sinkpad",
+          lpsink_sinkpad);
     }
 
     if (type == GST_LP_SINK_TYPE_TEXT) {
-      lpbin->text_pad = pad;
+      lpbin->text_pad = gst_object_ref (pad);
       lpsink_sinkpad = gst_element_get_request_pad (lpbin->lpsink, "text_sink");
       gst_pad_link (pad, lpsink_sinkpad);
+      g_object_set_data (G_OBJECT (lpbin->text_pad), "lpsink.sinkpad",
+          lpsink_sinkpad);
     }
   }
 
@@ -1559,42 +1565,51 @@ gst_lp_bin_deactive (GstLpBin * lpbin)
   GstPad *lpsink_sinkpad;
 
   if (lpbin->video_pad) {
-    //gst_object_unref (lpbin->video_pad);
+    GST_LOG_OBJECT (lpbin, "unlinking video pad in fcbin from sink");
+    lpsink_sinkpad =
+        g_object_get_data (G_OBJECT (lpbin->video_pad), "lpsink.sinkpad");
+    gst_pad_unlink (lpbin->video_pad, lpsink_sinkpad);
+
+    /* release back */
+    GST_LOG_OBJECT (lpbin, "release sink pad for video");
+    gst_lp_sink_release_pad (lpbin->lpsink, lpsink_sinkpad);
+
+    gst_object_unref (lpbin->video_pad);
     lpbin->video_pad = NULL;
+    lpsink_sinkpad = NULL;
   }
 
   if (lpbin->audio_pad) {
-    //gst_object_unref (lpbin->audio_pad);
+    GST_LOG_OBJECT (lpbin, "unlinking audio pad in fcbin from sink");
+    lpsink_sinkpad =
+        g_object_get_data (G_OBJECT (lpbin->audio_pad), "lpsink.sinkpad");
+    gst_pad_unlink (lpbin->audio_pad, lpsink_sinkpad);
+
+    /* release back */
+    GST_LOG_OBJECT (lpbin, "release sink pad for audio");
+    gst_lp_sink_release_pad (lpbin->lpsink, lpsink_sinkpad);
+
+    gst_object_unref (lpbin->audio_pad);
     lpbin->audio_pad = NULL;
+    lpsink_sinkpad = NULL;
   }
 
   if (lpbin->text_pad) {
+    GST_LOG_OBJECT (lpbin, "unlinking text pad in fcbin from sink");
+    lpsink_sinkpad =
+        g_object_get_data (G_OBJECT (lpbin->text_pad), "lpsink.sinkpad");
+    gst_pad_unlink (lpbin->text_pad, lpsink_sinkpad);
+
+    /* release back */
+    GST_LOG_OBJECT (lpbin, "release sink pad for text");
+    gst_lp_sink_release_pad (lpbin->lpsink, lpsink_sinkpad);
+
+    gst_object_unref (lpbin->text_pad);
     lpbin->text_pad = NULL;
   }
 
-  if (lpbin->fcbin) {
-    gst_element_set_state (GST_ELEMENT_CAST (lpbin->fcbin), GST_STATE_NULL);
-    gst_bin_remove (GST_BIN_CAST (lpbin), lpbin->fcbin);
-    //gst_object_unref (lpbin->fcbin);
-    lpbin->fcbin = NULL;
-  }
-
-  if (lpbin->audio_sink) {
-//    gst_element_set_state (lpbin->audio_sink, GST_STATE_NULL);
-    lpbin->audio_sink = NULL;
-  }
-
-  if (lpbin->video_sink) {
-//    gst_element_set_state (lpbin->video_sink, GST_STATE_NULL);
-    lpbin->video_sink = NULL;
-  }
-
-  if (lpbin->lpsink) {
-    gst_element_set_state (GST_ELEMENT_CAST (lpbin->lpsink), GST_STATE_NULL);
-    gst_bin_remove (GST_BIN_CAST (lpbin), lpbin->lpsink);
-    //gst_object_unref (lpbin->lpsink);
-    lpbin->lpsink = NULL;
-  }
+  if (lpsink_sinkpad)
+    gst_object_unref (lpsink_sinkpad);
 
   gst_bus_remove_signal_watch (lpbin->bus);
 
@@ -1614,10 +1629,17 @@ gst_lp_bin_deactive (GstLpBin * lpbin)
   REMOVE_SIGNAL (lpbin, lpbin->element_added_id);
   REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->fcbin_pad_added_id);
   REMOVE_SIGNAL (lpbin->uridecodebin, lpbin->fcbin_no_more_pads_id);
+
+  if (lpbin->fcbin) {
+    gst_element_set_state (GST_ELEMENT_CAST (lpbin->fcbin), GST_STATE_NULL);
+    gst_bin_remove (GST_BIN_CAST (lpbin), lpbin->fcbin);
+    lpbin->fcbin = NULL;
+  }
+
   if (lpbin->uridecodebin) {
-    gst_element_set_state (lpbin->uridecodebin, GST_STATE_NULL);
+    gst_element_set_state (GST_ELEMENT_CAST (lpbin->uridecodebin),
+        GST_STATE_NULL);
     gst_bin_remove (GST_BIN_CAST (lpbin), lpbin->uridecodebin);
-    //gst_object_unref (lpbin->uridecodebin);
     lpbin->uridecodebin = NULL;
   }
 }
@@ -1647,11 +1669,11 @@ gst_lp_bin_change_state (GstElement * element, GstStateChange transition)
     goto failure;
 
   switch (transition) {
-    case GST_STATE_CHANGE_READY_TO_NULL:
-    {
+    case GST_STATE_CHANGE_PAUSED_TO_READY:
       gst_lp_bin_deactive (lpbin);
       break;
-    }
+    case GST_STATE_CHANGE_READY_TO_NULL:
+      break;
     default:
       break;
   }
