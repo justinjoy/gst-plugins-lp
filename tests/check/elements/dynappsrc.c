@@ -26,6 +26,20 @@
 #include <gst/check/gstcheck.h>
 
 #define NUM_REPEAT 5
+#define NUM_APPSRC 10
+
+typedef struct _App App;
+
+struct _App
+{
+  GstElement *pipeline;
+  GstElement *dynappsrc;
+  GstElement *appsrc[NUM_APPSRC];
+  GstElement *fakesink[NUM_APPSRC];
+  gint nb_received_event;
+};
+
+App s_app;
 
 GST_START_TEST (test_uri_interface)
 {
@@ -50,9 +64,49 @@ GST_START_TEST (test_uri_interface)
 
 GST_END_TEST;
 
+static GstPadProbeReturn
+_appsrc_event_probe (GstPad * pad, GstPadProbeInfo * info, gpointer udata)
+{
+  GstEvent *event = GST_PAD_PROBE_INFO_DATA (info);
+  GstElement *appsrc = udata;
+  const GstStructure *s;
+  gchar *sstr;
+  App *app = &s_app;
+
+  GST_DEBUG ("_appsrc_event_probe : element = %s, event = %s",
+      GST_ELEMENT_NAME (appsrc), GST_EVENT_TYPE_NAME (event));
+
+  if (GST_EVENT_TYPE (event) == GST_EVENT_CUSTOM_UPSTREAM) {
+    s = gst_event_get_structure (event);
+    sstr = gst_structure_to_string (s);
+    if (g_str_equal (sstr, "application/x-custom;"))
+      app->nb_received_event++;
+    g_free (sstr);
+  }
+
+  return GST_PAD_PROBE_OK;
+}
+
 static void
 pad_added_cb (GstElement * element, GstPad * pad, gint * n_added)
 {
+  App *app = &s_app;
+  GstPad *sinkpad = NULL;
+  GstPad *target = NULL;
+
+  if (app->fakesink[*n_added] != NULL) {
+    sinkpad = gst_element_get_static_pad (app->fakesink[*n_added], "sink");
+    fail_unless (GST_PAD_LINK_SUCCESSFUL (gst_pad_link (pad, sinkpad)));
+    gst_object_unref (sinkpad);
+
+    target = gst_ghost_pad_get_target (GST_GHOST_PAD (pad));
+    fail_unless (target != NULL);
+
+    gst_pad_add_probe (target, GST_PAD_PROBE_TYPE_EVENT_UPSTREAM,
+        _appsrc_event_probe, GST_PAD_PARENT (target), NULL);
+    gst_object_unref (target);
+  }
+
   *n_added = *n_added + 1;
 }
 
@@ -257,6 +311,86 @@ GST_START_TEST (test_repeat_state_change)
 
 GST_END_TEST;
 
+GST_START_TEST (test_appsrc_upstream_event)
+{
+  App *app = &s_app;
+  guint pad_added_id = 0;
+  gint n_added = 0;
+  GstStateChangeReturn ret;
+  gint n_source = 0;
+  gint count = 0;
+  GstEvent *event;
+
+  GST_DEBUG ("Creating pipeline");
+  app->pipeline = gst_pipeline_new ("pipeline");
+  fail_if (app->pipeline == NULL);
+
+  GST_DEBUG ("Creating dynappsrc");
+  app->dynappsrc =
+      gst_element_make_from_uri (GST_URI_SRC, "dynappsrc://", "source", NULL);
+  fail_unless (app->dynappsrc != NULL,
+      "fail to create dynappsrc element by uri");
+  gst_bin_add (GST_BIN (app->pipeline), app->dynappsrc);
+
+  GST_DEBUG ("Creating fakesink");
+  for (count = 0; count < NUM_APPSRC; count++) {
+    app->fakesink[count] = gst_element_factory_make ("fakesink", NULL);
+    fail_if (app->fakesink[count] == NULL);
+    g_object_set (G_OBJECT (app->fakesink[count]), "sync", TRUE, NULL);
+    gst_bin_add (GST_BIN (app->pipeline), app->fakesink[count]);
+  }
+
+  pad_added_id =
+      g_signal_connect (app->dynappsrc, "pad-added",
+      G_CALLBACK (pad_added_cb), &n_added);
+
+  GST_DEBUG ("Creating appsrc");
+  for (count = 0; count < NUM_APPSRC; count++) {
+    gchar *appsrc_name;
+    appsrc_name = g_strdup_printf ("foot%d", count);
+    g_signal_emit_by_name (app->dynappsrc, "new-appsrc", appsrc_name,
+        &app->appsrc[count]);
+    /* user should do ref appsrc elements before using it */
+    gst_object_ref (app->appsrc[count]);
+
+    fail_unless (app->appsrc[count] != NULL, "failed to create appsrc element");
+    g_free (appsrc_name);
+  }
+
+  g_object_get (app->dynappsrc, "n-source", &n_source, NULL);
+  fail_unless (n_source == NUM_APPSRC,
+      "the number of source element is not matched");
+
+  ret = gst_element_set_state (app->pipeline, GST_STATE_PAUSED);
+  fail_unless (ret == GST_STATE_CHANGE_ASYNC);
+
+  fail_unless (n_added == NUM_APPSRC, "srcpad of dynappsrc does not added");
+
+  ret = gst_element_set_state (app->pipeline, GST_STATE_PLAYING);
+  fail_unless (ret == GST_STATE_CHANGE_ASYNC);
+
+  GST_DEBUG ("Send upstream event");
+  app->nb_received_event = 0;
+  event = gst_event_new_custom (GST_EVENT_CUSTOM_UPSTREAM,
+      gst_structure_new_empty ("application/x-custom"));
+
+  gst_element_send_event (app->pipeline, event);
+
+  fail_unless (app->nb_received_event == NUM_APPSRC,
+      "the number of received events are not matched");
+
+  GST_DEBUG ("Release pipeline");
+  /* user should do unref appsrc elements before destroy pipeline */
+  for (count = 0; count < NUM_APPSRC; count++)
+    gst_object_unref (app->appsrc[count]);
+
+  gst_element_set_state (app->pipeline, GST_STATE_NULL);
+  g_signal_handler_disconnect (app->dynappsrc, pad_added_id);
+  gst_object_unref (app->pipeline);
+}
+
+GST_END_TEST;
+
 static Suite *
 dynappsrc_suite (void)
 {
@@ -269,6 +403,7 @@ dynappsrc_suite (void)
   tcase_add_test (tc_chain, test_appsrc_creation);
   tcase_add_test (tc_chain, test_appsrc_create_when_paused);
   tcase_add_test (tc_chain, test_repeat_state_change);
+  tcase_add_test (tc_chain, test_appsrc_upstream_event);
 
   return s;
 }
