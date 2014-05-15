@@ -802,6 +802,20 @@ gst_lp_bin_set_property (GObject * object, guint prop_id,
       lpbin->use_buffering = g_value_get_boolean (value);
       break;
     case PROP_SMART_PROPERTIES:
+      if (!lpbin->source && lpbin->smart_prop &&
+          g_str_has_prefix (g_value_get_string(value), "smart-properties")) {
+        gchar *prop, *temp;
+
+        prop = g_value_get_string (value);
+        temp = lpbin->smart_prop;
+
+        prop += strlen ("smart-properties");
+
+        lpbin->smart_prop = g_strdup_printf ("%s %s", temp, prop);
+        g_free (temp);
+        break;
+      }
+
       g_free (lpbin->smart_prop);
       lpbin->smart_prop = g_strdup (g_value_get_string (value));
 
