@@ -73,8 +73,8 @@ _appsrc_event_probe (GstPad * pad, GstPadProbeInfo * info, gpointer udata)
   gchar *sstr;
   App *app = &s_app;
 
-  GST_DEBUG ("_appsrc_event_probe : element = %s, event = %s",
-      GST_ELEMENT_NAME (appsrc), GST_EVENT_TYPE_NAME (event));
+  GST_DEBUG ("element:%s got an event:%s", GST_ELEMENT_NAME (appsrc),
+      GST_EVENT_TYPE_NAME (event));
 
   if (GST_EVENT_TYPE (event) == GST_EVENT_CUSTOM_UPSTREAM) {
     s = gst_event_get_structure (event);
@@ -82,6 +82,8 @@ _appsrc_event_probe (GstPad * pad, GstPadProbeInfo * info, gpointer udata)
     if (g_str_equal (sstr, "application/x-custom;"))
       app->nb_received_event++;
     g_free (sstr);
+  } else if (GST_EVENT_TYPE (event) == GST_EVENT_SEEK) {
+    app->nb_received_event++;
   }
 
   return GST_PAD_PROBE_OK;
@@ -369,14 +371,40 @@ GST_START_TEST (test_appsrc_upstream_event)
   ret = gst_element_set_state (app->pipeline, GST_STATE_PLAYING);
   fail_unless (ret == GST_STATE_CHANGE_ASYNC);
 
-  GST_DEBUG ("Send upstream event");
+  GST_DEBUG ("Sending upstream custom event");
   app->nb_received_event = 0;
   event = gst_event_new_custom (GST_EVENT_CUSTOM_UPSTREAM,
       gst_structure_new_empty ("application/x-custom"));
 
   gst_element_send_event (app->pipeline, event);
-
   fail_unless (app->nb_received_event == NUM_APPSRC,
+      "the number of received events are not matched");
+
+  /*
+   * First of all, dynappsrc handle a seek-event that it send all of appsrc elements.
+   * Try to send seek-event in a fakesink.
+   * Received seek-events in all of appsrc elements should be 10.
+   */
+  GST_DEBUG ("Sending flush seek event to fakesink");
+  for (count = 0; count < NUM_APPSRC; count++) {
+    app->nb_received_event = 0;
+    gst_element_seek (app->fakesink[count], 1.0, GST_FORMAT_TIME,
+        GST_SEEK_FLAG_FLUSH, GST_SEEK_TYPE_SET, 0, GST_SEEK_TYPE_SET, -1);
+
+    fail_unless (app->nb_received_event == NUM_APPSRC,
+        "the number of received events are not matched");
+  }
+
+  /*
+   * Try to send seek-event in pipeline.
+   * In this case, received seek-event in all of appsrc elements should be 100.
+   */
+  GST_DEBUG ("Sending flush seek event to pipeline");
+  app->nb_received_event = 0;
+  gst_element_seek (app->pipeline, 1.0, GST_FORMAT_TIME,
+      GST_SEEK_FLAG_FLUSH, GST_SEEK_TYPE_SET, 0, GST_SEEK_TYPE_SET, -1);
+
+  fail_unless (app->nb_received_event == (NUM_APPSRC * 10),
       "the number of received events are not matched");
 
   GST_DEBUG ("Release pipeline");
