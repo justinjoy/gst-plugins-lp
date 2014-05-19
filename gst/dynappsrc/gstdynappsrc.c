@@ -289,8 +289,26 @@ gst_dyn_appsrc_handle_src_event (GstPad * pad, GstObject * parent,
 {
   gboolean res = TRUE;
   GstPad *target;
+  GstDynAppSrc *bin = GST_DYN_APPSRC (parent);
+  GstIterator *it;
+  GValue data = { 0, };
 
-  if ((target = gst_ghost_pad_get_target (GST_GHOST_PAD_CAST (pad)))) {
+  /*
+   * dynappsrc handle a seek event that it send to all of linked appsrce elements.
+   */
+  if (GST_EVENT_TYPE (event) == GST_EVENT_SEEK) {
+    it = gst_element_iterate_src_pads (GST_ELEMENT_CAST (bin));
+    while (gst_iterator_next (it, &data) == GST_ITERATOR_OK) {
+      GstPad *srcpad = g_value_get_object (&data);
+      target = gst_ghost_pad_get_target (GST_GHOST_PAD_CAST (srcpad));
+      res = gst_pad_send_event (target, gst_event_ref (event));
+      gst_object_unref (target);
+      g_value_reset (&data);
+    }
+    gst_event_unref (event);
+    g_value_unset (&data);
+    gst_iterator_free (it);
+  } else if ((target = gst_ghost_pad_get_target (GST_GHOST_PAD_CAST (pad)))) {
     res = gst_pad_send_event (target, event);
     gst_object_unref (target);
   } else
