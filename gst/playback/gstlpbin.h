@@ -99,7 +99,7 @@ struct _GstLpBin
   gboolean use_stream_lock;
 
   /* This structure contains property name and value */
-  gchar *smart_prop;
+  GstStructure *smart_prop;
 
   /* this string contains all of elements from decodebin */
   gchar *elements_str;

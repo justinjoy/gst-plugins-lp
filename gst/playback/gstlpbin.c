@@ -318,9 +318,9 @@ gst_lp_bin_class_init (GstLpBinClass * klass)
    *
    */
   g_object_class_install_property (gobject_klass, PROP_SMART_PROPERTIES,
-      g_param_spec_string ("smart-properties", "Smart Properties",
-          "Information of properties in such key and value", NULL,
-          G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
+      g_param_spec_boxed ("smart-properties", "Smart Properties",
+          "Information of properties in such key and value",
+          GST_TYPE_STRUCTURE, G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property (gobject_klass, PROP_BUFFER_SIZE,
       g_param_spec_int ("buffer-size", "Buffer size (bytes)",
@@ -652,8 +652,10 @@ gst_lp_bin_finalize (GObject * obj)
     gst_object_unref (lpbin->audio_sink);
   }
 
-  g_free (lpbin->smart_prop);
-  lpbin->smart_prop = NULL;
+  if (lpbin->smart_prop) {
+    gst_structure_free (lpbin->smart_prop);
+    lpbin->smart_prop = NULL;
+  }
 
   if (lpbin->elements_str) {
     g_free (lpbin->elements_str);
@@ -766,6 +768,15 @@ gst_lp_bin_stream_unlock (GstLpBin * lpbin)
   return ret;
 }
 
+static gboolean
+set_smart_properties (GQuark field_id, const GValue * value, gpointer user_data)
+{
+  GstStructure *smart_prop = (GstStructure *) user_data;
+
+  gst_structure_id_set_value (smart_prop, field_id, value);
+  return TRUE;
+}
+
 static void
 gst_lp_bin_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec)
@@ -802,27 +813,25 @@ gst_lp_bin_set_property (GObject * object, guint prop_id,
       lpbin->use_buffering = g_value_get_boolean (value);
       break;
     case PROP_SMART_PROPERTIES:
-      if (!lpbin->source && lpbin->smart_prop &&
-          g_str_has_prefix (g_value_get_string(value), "smart-properties")) {
-        gchar *prop, *temp;
+    {
+      const GstStructure *s = gst_value_get_structure (value);
 
-        prop = g_value_get_string (value);
-        temp = lpbin->smart_prop;
+      GST_INFO_OBJECT (lpbin,
+          "set smart-properties, structure = %" GST_PTR_FORMAT, s);
 
-        prop += strlen ("smart-properties");
-
-        lpbin->smart_prop = g_strdup_printf ("%s %s", temp, prop);
-        g_free (temp);
+      if (!gst_structure_has_name (s, "smart-properties"))
         break;
-      }
 
-      g_free (lpbin->smart_prop);
-      lpbin->smart_prop = g_strdup (g_value_get_string (value));
+      if (lpbin->smart_prop)
+        gst_structure_foreach (s, set_smart_properties, lpbin->smart_prop);
+      else
+        lpbin->smart_prop = gst_structure_copy (s);
 
       if (lpbin->source)
         g_object_set (lpbin->source, "smart-properties", lpbin->smart_prop,
             NULL);
       break;
+    }
     case PROP_BUFFER_SIZE:
       lpbin->buffer_size = g_value_get_int (value);
       break;
