@@ -46,6 +46,9 @@ G_BEGIN_DECLS
 #define FD_AUDIO_CAPS \
     "audio/mpeg;"\
     "audio/x-dts;" \
+    "audio/x-dtsh;" \
+    "audio/x-dtsl;" \
+    "audio/x-dtse;" \
     "audio/x-ac3;" \
     "audio/x-eac3;" \
     "audio/x-private1-ac3;" \
