@@ -112,6 +112,9 @@ enum
 enum
 {
   SIGNAL_NEW_APPSRC,
+
+  /* actions */
+  SIGNAL_END_OF_STREAM,
   LAST_SIGNAL
 };
 
@@ -187,7 +190,20 @@ gst_dyn_appsrc_class_init (GstDynAppSrcClass * klass)
       G_STRUCT_OFFSET (GstDynAppSrcClass, new_appsrc), NULL, NULL,
       g_cclosure_marshal_generic, GST_TYPE_ELEMENT, 1, G_TYPE_STRING);
 
+  /**
+    * GstDynAppSrc::end-of-stream:
+    * @dynappsrc: the dynappsrc
+    *
+    * Notify all of @appsrc that no more buffer are available.
+    */
+  gst_dyn_appsrc_signals[SIGNAL_END_OF_STREAM] =
+      g_signal_new ("end-of-stream", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION, G_STRUCT_OFFSET (GstDynAppSrcClass,
+          end_of_stream), NULL, NULL, g_cclosure_marshal_generic,
+      GST_TYPE_FLOW_RETURN, 0, G_TYPE_NONE);
+
   klass->new_appsrc = gst_dyn_appsrc_new_appsrc;
+  klass->end_of_stream = gst_dyn_appsrc_end_of_stream;
 
   gstelement_class->change_state =
       GST_DEBUG_FUNCPTR (gst_dyn_appsrc_change_state);
@@ -412,6 +428,36 @@ gst_dyn_appsrc_new_appsrc (GstDynAppSrc * bin, const gchar * name)
   GST_OBJECT_UNLOCK (bin);
 
   return appsrc_group->appsrc;
+}
+
+/**
+ * gst_dyn_appsrc_end_of_stream:
+ * @dynappsrc: a #GstDynAppSrc
+ *
+ * Indicates to all of appsrc elements that the last buffer queued in the
+ * element is the last buffer of the stream.
+ *
+ * Returns: #GST_FLOW_OK when the EOS was successfuly queued.
+ * #GST_FLOW_FLUSHING when @appsrc is not PAUSED or PLAYING.
+ */
+GstFlowReturn
+gst_dyn_appsrc_end_of_stream (GstDynAppSrc * bin)
+{
+  GstFlowReturn ret = GST_FLOW_OK;
+  GList *item;
+
+  for (item = bin->appsrc_list; item; item = g_list_next (item)) {
+    GstAppSourceGroup *appsrc_group = (GstAppSourceGroup *) item->data;
+
+    GST_DEBUG_OBJECT (bin, "indicate to appsrc element for EOS");
+    g_signal_emit_by_name (appsrc_group->appsrc, "end-of-stream", &ret);
+    GST_DEBUG_OBJECT (bin, "%s[ret:%s]",
+        GST_ELEMENT_NAME (appsrc_group->appsrc), gst_flow_get_name (ret));
+    if (ret != GST_FLOW_OK)
+      break;
+  }
+
+  return ret;
 }
 
 static GstStateChangeReturn

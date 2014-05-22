@@ -58,6 +58,9 @@ struct _GstDynAppSrcClass
 
   /* create a appsrc element */
   GstElement *(*new_appsrc) (GstDynAppSrc * dynappsrc, const gchar * name);
+
+  /* actions */
+    GstFlowReturn (*end_of_stream) (GstDynAppSrc * dynappsrc);
 };
 
 struct _GstAppSourceGroup
@@ -67,6 +70,8 @@ struct _GstAppSourceGroup
 };
 
 GType gst_dyn_appsrc_get_type (void);
+
+GstFlowReturn gst_dyn_appsrc_end_of_stream (GstDynAppSrc * dynappsrc);
 
 G_END_DECLS
 #endif /* __GST_DYN_APPSRC_H__ */
