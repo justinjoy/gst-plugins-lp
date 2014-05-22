@@ -37,6 +37,7 @@ struct _App
   GstElement *appsrc[NUM_APPSRC];
   GstElement *fakesink[NUM_APPSRC];
   gint nb_received_event;
+  GMainLoop *loop;
 };
 
 App s_app;
@@ -419,6 +420,41 @@ GST_START_TEST (test_appsrc_upstream_event)
 
 GST_END_TEST;
 
+static gboolean
+bus_message (GstBus * bus, GstMessage * message, App * app)
+{
+  GST_DEBUG ("got message %s \n",
+      gst_message_type_get_name (GST_MESSAGE_TYPE (message)));
+
+  switch (GST_MESSAGE_TYPE (message)) {
+    case GST_MESSAGE_EOS:
+      g_main_loop_quit (app->loop);
+      break;
+    default:
+      break;
+  }
+  return TRUE;
+}
+
+static gboolean
+do_send_eos (App * app)
+{
+  GstFlowReturn flow_ret = GST_FLOW_OK;
+
+  /*
+   * First of all, dynappsrc handle an EOS event that it send all of appsrc elements.
+   * Try to send an EOS event via emmit signal.
+   * Returned valude should be GST_FLOW_OK.
+   */
+  GST_DEBUG ("Sending EOS event");
+  g_signal_emit_by_name (app->dynappsrc, "end-of-stream", &flow_ret);
+  fail_unless (flow_ret == GST_FLOW_OK,
+      "failed to send EOS event to dynappsrc bin");
+
+  return FALSE;
+}
+
+
 GST_START_TEST (test_appsrc_eos)
 {
   App *app = &s_app;
@@ -427,11 +463,19 @@ GST_START_TEST (test_appsrc_eos)
   GstStateChangeReturn ret;
   gint n_source = 0;
   gint count = 0;
-  GstFlowReturn flow_ret = GST_FLOW_OK;
+  GstBus *bus;
 
   GST_DEBUG ("Creating pipeline");
   app->pipeline = gst_pipeline_new ("pipeline");
   fail_if (app->pipeline == NULL);
+
+  app->loop = g_main_loop_new (NULL, FALSE);
+
+  bus = gst_pipeline_get_bus (GST_PIPELINE (app->pipeline));
+
+  /* add watch for messages */
+  gst_bus_add_watch (bus, (GstBusFunc) bus_message, app);
+  gst_object_unref (bus);
 
   GST_DEBUG ("Creating dynappsrc");
   app->dynappsrc =
@@ -477,15 +521,11 @@ GST_START_TEST (test_appsrc_eos)
   ret = gst_element_set_state (app->pipeline, GST_STATE_PLAYING);
   fail_unless (ret == GST_STATE_CHANGE_ASYNC);
 
-  /*
-   * First of all, dynappsrc handle an EOS event that it send all of appsrc elements.
-   * Try to send an EOS event via emmit signal.
-   * Returned valude should be GST_FLOW_OK.
-   */
-  GST_DEBUG ("Sending EOS event");
-  g_signal_emit_by_name (app->dynappsrc, "end-of-stream", &flow_ret);
-  fail_unless (flow_ret == GST_FLOW_OK,
-      "failed to send EOS event to dynappsrc bin");
+  /* add a timeout to send an EOS event to dynappsrc */
+  g_timeout_add_seconds (1, (GSourceFunc) do_send_eos, app);
+
+  /* now run */
+  g_main_loop_run (app->loop);
 
   GST_DEBUG ("Release pipeline");
   /* user should do unref appsrc elements before destroy pipeline */
@@ -493,6 +533,7 @@ GST_START_TEST (test_appsrc_eos)
     gst_object_unref (app->appsrc[count]);
 
   gst_element_set_state (app->pipeline, GST_STATE_NULL);
+
   g_signal_handler_disconnect (app->dynappsrc, pad_added_id);
   gst_object_unref (app->pipeline);
 }
