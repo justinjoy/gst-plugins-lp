@@ -419,6 +419,86 @@ GST_START_TEST (test_appsrc_upstream_event)
 
 GST_END_TEST;
 
+GST_START_TEST (test_appsrc_eos)
+{
+  App *app = &s_app;
+  guint pad_added_id = 0;
+  gint n_added = 0;
+  GstStateChangeReturn ret;
+  gint n_source = 0;
+  gint count = 0;
+  GstFlowReturn flow_ret = GST_FLOW_OK;
+
+  GST_DEBUG ("Creating pipeline");
+  app->pipeline = gst_pipeline_new ("pipeline");
+  fail_if (app->pipeline == NULL);
+
+  GST_DEBUG ("Creating dynappsrc");
+  app->dynappsrc =
+      gst_element_make_from_uri (GST_URI_SRC, "dynappsrc://", "source", NULL);
+  fail_unless (app->dynappsrc != NULL,
+      "fail to create dynappsrc element by uri");
+  gst_bin_add (GST_BIN (app->pipeline), app->dynappsrc);
+
+  GST_DEBUG ("Creating fakesink");
+  for (count = 0; count < NUM_APPSRC; count++) {
+    app->fakesink[count] = gst_element_factory_make ("fakesink", NULL);
+    fail_if (app->fakesink[count] == NULL);
+    g_object_set (G_OBJECT (app->fakesink[count]), "sync", TRUE, NULL);
+    gst_bin_add (GST_BIN (app->pipeline), app->fakesink[count]);
+  }
+
+  pad_added_id =
+      g_signal_connect (app->dynappsrc, "pad-added",
+      G_CALLBACK (pad_added_cb), &n_added);
+
+  GST_DEBUG ("Creating appsrc");
+  for (count = 0; count < NUM_APPSRC; count++) {
+    gchar *appsrc_name;
+    appsrc_name = g_strdup_printf ("foot%d", count);
+    g_signal_emit_by_name (app->dynappsrc, "new-appsrc", appsrc_name,
+        &app->appsrc[count]);
+    /* user should do ref appsrc elements before using it */
+    gst_object_ref (app->appsrc[count]);
+
+    fail_unless (app->appsrc[count] != NULL, "failed to create appsrc element");
+    g_free (appsrc_name);
+  }
+
+  g_object_get (app->dynappsrc, "n-source", &n_source, NULL);
+  fail_unless (n_source == NUM_APPSRC,
+      "the number of source element is not matched");
+
+  ret = gst_element_set_state (app->pipeline, GST_STATE_PAUSED);
+  fail_unless (ret == GST_STATE_CHANGE_ASYNC);
+
+  fail_unless (n_added == NUM_APPSRC, "srcpad of dynappsrc does not added");
+
+  ret = gst_element_set_state (app->pipeline, GST_STATE_PLAYING);
+  fail_unless (ret == GST_STATE_CHANGE_ASYNC);
+
+  /*
+   * First of all, dynappsrc handle an EOS event that it send all of appsrc elements.
+   * Try to send an EOS event via emmit signal.
+   * Returned valude should be GST_FLOW_OK.
+   */
+  GST_DEBUG ("Sending EOS event");
+  g_signal_emit_by_name (app->dynappsrc, "end-of-stream", &flow_ret);
+  fail_unless (flow_ret == GST_FLOW_OK,
+      "failed to send EOS event to dynappsrc bin");
+
+  GST_DEBUG ("Release pipeline");
+  /* user should do unref appsrc elements before destroy pipeline */
+  for (count = 0; count < NUM_APPSRC; count++)
+    gst_object_unref (app->appsrc[count]);
+
+  gst_element_set_state (app->pipeline, GST_STATE_NULL);
+  g_signal_handler_disconnect (app->dynappsrc, pad_added_id);
+  gst_object_unref (app->pipeline);
+}
+
+GST_END_TEST;
+
 static Suite *
 dynappsrc_suite (void)
 {
@@ -432,6 +512,7 @@ dynappsrc_suite (void)
   tcase_add_test (tc_chain, test_appsrc_create_when_paused);
   tcase_add_test (tc_chain, test_repeat_state_change);
   tcase_add_test (tc_chain, test_appsrc_upstream_event);
+  tcase_add_test (tc_chain, test_appsrc_eos);
 
   return s;
 }
