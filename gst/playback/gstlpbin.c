@@ -1385,7 +1385,7 @@ gst_lp_bin_setup_element (GstLpBin * lpbin)
 
   gst_bin_add (GST_BIN_CAST (lpbin), lpbin->lpsink);
 
-  g_object_unref (fd_caps);
+  gst_caps_unref (fd_caps);
 
   return TRUE;
 }
